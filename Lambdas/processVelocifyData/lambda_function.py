@@ -11,16 +11,21 @@ s3_client = boto3.client('s3')
 lambda_client = boto3.client('lambda')
 
 def lambda_handler(event, context):
-    
-    # S3 bucket and file information
+    print(event)
     target_bucket_name = os.environ.get('target_bucket_name')
-    source_bucket_name = event['Records'][0]['s3']['bucket']['name']
-    file_key = event['Records'][0]['s3']['object']['key']
+    source_bucket_name = os.environ.get('source_bucket_name')
+    lambda_status = event.get("lambdaStatus", "s3Triggered")
+    print(f"lambda_status: {lambda_status}")
+    if lambda_status == "invokedSelf":
+        print("Invoking self")
+        file_key = event.get("file_key")
+        start_index = event.get("start_index")
+    else:
+        print("Triggered from s3")
+        file_key  = event['Records'][0]['s3']['object']['key']
     
     #Invoke redshift lambda
     invoke_redshift_lambda(file_key,source_bucket_name)
-    # source_bucket_name = os.environ.get('source_bucket_name')
-    # file_key = os.environ.get('file_key')
 
     # Start tracking time
     start_time = time.time()
@@ -29,6 +34,7 @@ def lambda_handler(event, context):
     # Get the start index from the event or default to 0
     start_index = event.get("start_index", 0)
     print(f"startIndex: {start_index}")
+    print(f"fileKey: {file_key}")
     try:
         # Get the CSV file from S3
         response = s3_client.get_object(Bucket=source_bucket_name, Key=file_key)
@@ -86,7 +92,8 @@ def invoke_self(context, file_key, start_index):
         InvocationType='Event',  # Async invocation
         Payload=json.dumps({
             "file_key": file_key,
-            "start_index": start_index
+            "start_index": start_index,
+            "lambdaStatus":"invokedSelf"
         })
     )
 
