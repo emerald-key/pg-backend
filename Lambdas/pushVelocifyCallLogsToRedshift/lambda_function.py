@@ -121,9 +121,7 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         WHERE NOT EXISTS (
             SELECT 1 FROM public.call WHERE public.call.Call_ID = public.staging_call.Call_ID
         );
-
         """
-
         execute_redshift_query(insert_query)
         print("Data copied successfully to Redshift.")
 
@@ -144,27 +142,13 @@ def lambda_handler(event, context):
     """
     event = {
         'bucket_name': 'raw-velocify-calllogs',
-        'input_file_key': 'Lm32481_CallHistory_20241119_211032_88636b0f-bece-47a5-9a5a-c2eed219a982.csv',
-        'output_file_key': 'processed/Lm32481_CallHistory_20241119_211032_88636b0f-bece-47a5-9a5a-c2eed219a982.csv',
-        'table_name': 'public.staging_call',
-        'column_mapping': {
-            'Call Id': 'Call_ID',
-            'Lead Id': 'Lead_ID',
-            'User': 'Broker_Name',
-            'Result': 'Outcome',
-            'Call Segment':'Call_Segment',
-            'Origin':'Call_Type',
-            'Time':'Date_Time',
-            'Call Duration (hrs:min:sec)':'Talk_Time',
-            'Prospect Number':'Prospect_Number',
-            'Inbound Number':'Inbound_Number'
-        }
+        'file_key': 'Lm32481_CallHistory_091723_bd11e570-5d6a-403d-be5a-9d478983d703_jan72025.csv',
     }
     
     
     # Input and output details
     bucket_name = event['bucket_name']
-    input_file_key = event.file_key
+    input_file_key = event['file_key']
     output_file_key = f"processed/{input_file_key}"
     table_name = 'public.staging_Call'
 

@@ -1,24 +1,17 @@
 import os
 import json
 import boto3
-import botocore
-import io
-import csv
-import time
-from datetime import datetime
-from botocore.client import Config
 import uuid
+from botocore.client import Config
 
-
-# Initialize S3 client and Secrets Manager client
+# Initialize AWS clients
 s3_client = boto3.client('s3')
-lambda_client = boto3.client('lambda')
-secret_name = os.environ['SecretId']
 session = boto3.session.Session()
 region = session.region_name
 
 # Secrets Manager client
 client_secretsmanager = session.client(service_name='secretsmanager', region_name=region)
+secret_name = os.environ['SecretId']
 get_secret_value_response = client_secretsmanager.get_secret_value(SecretId=secret_name)
 secret_arn = get_secret_value_response['ARN']
 secret_json = json.loads(get_secret_value_response['SecretString'])
@@ -29,49 +22,72 @@ config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config=config)
 
 def lambda_handler(event, context):
-    print(f"Entered lambda_handler: {event}")
-    transcript = {
-        "call_id":"93224940-18BE-407B-BC26-D807E8FB4D90",
-        "transcript":"Test"
-    }
-    transcript_id = uuid.uuid4()
-    call_id = transcript['call_id']
-    transcript =  transcript['transcript']
-    transcript_id = f"'{transcript_id}'" if transcript_id != 'NULL' else transcript_id
-    call_id = f"'{call_id}'" if call_id != 'NULL' else call_id
-    transcript = f"'{transcript}'" if transcript != 'NULL' else transcript
     try:
-        # Construct SQL queries to delete and insert
+        event = {
+            'bucket_name': "raw-velocify-callrecording-transcriptions",
+            'file_key': "0000287D-A7E1-4B37-B5B6-690344370ED9.json"
+        }
+
+        # Extract bucket and key from the event
+        bucket_name = event['bucket_name']
+        file_key = event['file_key']
+
+        # Read the JSON file from S3
+        json_data = read_json_from_s3(bucket_name, file_key)
+
+        # Extract data from the JSON
+        call_id = json_data['call_id']
+        transcript = json_data['transcription']
+        talk_time_percentages = json_data['talk_time_percentages']
+
+        talk_time_a = int(talk_time_percentages.get('A', 0))
+        talk_time_b = int(talk_time_percentages.get('B', 0))
+        talk_time_c = int(talk_time_percentages.get('C', 0))  # Default 0 if not present
+
+        # Generate a unique Transcript_ID
+        transcript_id = str(uuid.uuid4())
+
+        # Construct SQL queries
         delete_sql_query = f"""
-        DELETE FROM public.Transcript WHERE Call_ID = {call_id};
+        DELETE FROM public.Transcript WHERE Call_ID = '{call_id}';
         """
         insert_sql_query = f"""
-        INSERT INTO public.Transcript (Transcript_ID,Call_ID,Transcript)
-        VALUES ({transcript_id},{call_id},{transcript});
+        INSERT INTO public.Transcript (Transcript_ID, Call_ID, Transcript, TalkTime_Percentage_A, TalkTime_Percentage_B, TalkTime_Percentage_C)
+        VALUES ('{transcript_id}', '{call_id}', $$ {transcript} $$, {talk_time_a}, {talk_time_b}, {talk_time_c});
         """
 
-        # Execute delete query first
+        # Execute the queries
         execute_redshift_query(delete_sql_query)
-
-        # Execute insert query
         execute_redshift_query(insert_sql_query)
 
-        print("CSV processing completed successfully")
+        print("Data successfully inserted/updated in Redshift.")
         return {
             'statusCode': 200,
-            'body': 'Call logs processed successfully!'
+            'body': 'Data processed successfully.'
         }
 
     except Exception as e:
         print(f"Error: {str(e)}")
         return {
             'statusCode': 500,
-            'body': f"Failed to process file: {str(e)}"
+            'body': f"Failed to process data: {str(e)}"
         }
+
+def read_json_from_s3(bucket_name, file_key):
+    """
+    Reads a JSON file from the specified S3 bucket and key.
+    """
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=file_key)
+        content = response['Body'].read().decode('utf-8')
+        return json.loads(content)
+    except Exception as e:
+        print(f"Error reading JSON from S3: {str(e)}")
+        raise
 
 def execute_redshift_query(query_str):
     """
-    Execute a query in the Redshift cluster.
+    Executes a query on the Redshift cluster.
     """
     print(f"Executing query: {query_str}")
     try:
@@ -83,7 +99,6 @@ def execute_redshift_query(query_str):
         )
         print(f"Query executed successfully: {result}")
         return result
-
     except Exception as e:
         print(f"Error executing query: {str(e)}")
         raise

@@ -57,17 +57,23 @@ def lambda_handler(event, context):
             file_key = obj["Key"]
             call_id = os.path.splitext(os.path.basename(file_key))[0]
 
+            # Check if the transcription result already exists in the target bucket
+            target_file_key = f"{call_id}.json"
+            if check_file_exists(target_bucket_name, target_file_key):
+                print(f"File {target_file_key} already exists in the target bucket. Skipping.")
+                continue
+
             # Download the audio file
             local_file_path = f"/tmp/{os.path.basename(file_key)}"
             try:
                 s3_client.download_file(source_bucket_name, file_key, local_file_path)
-                print(f"Downloaded file: {file_key}")
+                # print(f"Downloaded file: {file_key}")
 
                 # Transcribe and save results
                 transcription_result, talk_time_percentages = transcribe_and_calculate_talk_time(local_file_path)
                 save_results_to_s3(
                     bucket_name=target_bucket_name,
-                    file_name=f"{call_id}.json",
+                    file_name=target_file_key,
                     data={
                         "call_id": call_id,
                         "transcription": transcription_result,
@@ -83,7 +89,7 @@ def lambda_handler(event, context):
 
         # Check for more files to process
         if response.get("IsTruncated"):
-            print("More files to process. Reinvoking Lambda for the next batch.")
+            # print("More files to process. Reinvoking Lambda for the next batch.")
             reinvoke_lambda(context, continuation_token=response["NextContinuationToken"], start_index=0)
         else:
             print("Processing complete for all files.")
@@ -99,6 +105,17 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'body': f"Failed to process files: {e}"
         }
+# Function to check if a file exists in the target bucket
+def check_file_exists(bucket_name, file_key):
+    try:
+        s3_client.head_object(Bucket=bucket_name, Key=file_key)
+        return True
+    except s3_client.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == '404':
+            return False
+        else:
+            print(f"Error checking if file exists: {e}")
+            raise
 
 # Transcription function
 def transcribe_and_calculate_talk_time(file_path):
@@ -136,7 +153,7 @@ def save_results_to_s3(bucket_name, file_name, data):
             Body=json_data,
             ContentType="application/json"
         )
-        print(f"Saved file {file_name} to bucket {bucket_name}.")
+        # print(f"Saved file {file_name} to bucket {bucket_name}.")
     except Exception as e:
         print(f"Error saving file to S3: {e}")
         raise
@@ -153,4 +170,4 @@ def reinvoke_lambda(context, continuation_token=None, start_index=0):
         InvocationType='Event',  # Async invocation
         Payload=json.dumps(payload)
     )
-    print("Lambda reinvoked successfully.")
+    # print("Lambda reinvoked successfully.")
