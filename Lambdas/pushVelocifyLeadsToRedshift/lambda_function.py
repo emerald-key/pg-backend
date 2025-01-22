@@ -10,8 +10,15 @@ import csv
 
 # Initialize S3 client and other clients
 s3_client = boto3.client('s3')
+ses_client = boto3.client('ses')
 lambda_client = boto3.client('lambda')
+session = boto3.session.Session()
+region = session.region_name
 secret_name = os.environ['SecretId']  # Getting SecretId from Environment variables
+client_secretsmanager = session.client(service_name='secretsmanager', region_name=region)
+get_secret_value_response = client_secretsmanager.get_secret_value(SecretId=secret_name)
+secret_arn = get_secret_value_response['ARN']
+secret_json = json.loads(get_secret_value_response['SecretString'])
 session = boto3.session.Session()
 region = session.region_name
 
@@ -90,8 +97,8 @@ def lambda_handler(event, context):
     print(f"Entered lambda_handler: {event}")
     event = {
         'bucket_name': 'raw-velocify-leads',
-        'input_file_key': 'VelocifyLeads.csv',
-        'output_file_key': 'processed/VelocifyLeads.csv',
+        'input_file_key': 'AI_full_download_20250121_0803279940_jan2025.csv',
+        'output_file_key': 'processed/AI_full_download_20250121_0803279940_jan2025.csv',
         'table_name': 'public.staging_lead',
         'column_mapping': {
             'Id': 'Lead_ID',
@@ -161,7 +168,23 @@ def lambda_handler(event, context):
         s3_path = f"s3://{bucket_name}/{output_file_key}"
         column_list = list(column_mapping.values())
         # Step 4: Load data into Redshift
-        copy_data_to_redshift(s3_path, table_name, column_list)
+        copied_rows = copy_data_to_redshift(s3_path, table_name, column_list)
+
+         # Step 5: Count rows in the CSV file (excluding header)
+        response = s3_client.get_object(Bucket=bucket_name, Key=input_file_key)
+        csv_lines = response['Body'].read().decode('utf-8').splitlines()
+        csv_row_count = len(csv_lines) - 1  # Exclude header
+        if(copied_rows < csv_row_count):
+            # Step 6: Send SES email
+            subject = "Leads : Redshift Data Load Completed"
+            body = f"""
+            Bucket Name: {bucket_name}
+            CSV File Loaded: {input_file_key}
+            Total Rows in CSV: {csv_row_count}
+            Rows Copied to Redshift: {copied_rows}
+            """
+            send_email(subject, body)
+
 
         return {
             'statusCode': 200,
@@ -170,6 +193,11 @@ def lambda_handler(event, context):
 
     except Exception as e:
         print(f"Error: {str(e)}")
+        err_subject = "Error Processing CSV To Redshift"
+        err_body = f"""
+        Error : {str(e)}
+        """
+        send_email(err_subject, err_body)
         return {
             'statusCode': 500,
             'body': f"Failed to process file: {str(e)}"
@@ -182,8 +210,11 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
     :param table_name: Target Redshift table name.
     :param column_list: List of target columns in Redshift table.
     """
-    aws_access_key = os.environ['ACCESS_KEY_ID']
-    aws_secret_access_key = os.environ['SECRET_ACCESS_KEY']
+    aws_credentials_secret_name = os.environ['credentials_secret_name']
+    credentials_response = client_secretsmanager.get_secret_value(SecretId=aws_credentials_secret_name)
+    aws_credentials = json.loads(credentials_response['SecretString'])
+    aws_access_key = aws_credentials['AWS_ACCESS_KEY_ID']
+    aws_secret_access_key = aws_credentials['AWS_SECRET_ACCESS_KEY']
     try:
     
         copy_query = f"""
@@ -199,7 +230,9 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         SET timezone = 'US/Eastern';
         """
         execute_redshift_query(timezone_query)
-
+        # Get row count before insert
+        before_count = get_table_row_count()
+        print(f"Row count before insert: {before_count}")
         update_query = f"""
         UPDATE public.Lead
         SET 
@@ -210,29 +243,71 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
             Milestone = staging.Milestone,
             Broker_Name = staging.Broker_Name,
             "Group" = staging."Group",
-            Date_Added = COALESCE(NULLIF(staging.Date_Added, '')::TIMESTAMP, public.Lead.Date_Added),
+            Date_Added = COALESCE(
+                CASE 
+                    WHEN NULLIF(staging.Date_Added, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.Date_Added, '')::TIMESTAMP 
+                    ELSE NULL 
+                END,
+                public.Lead.Date_Added
+            ),
             Last_Action = staging.Last_Action,
-            First_Contact_Attempt_Date = COALESCE(NULLIF(staging.First_Contact_Attempt_Date, '')::TIMESTAMP, public.Lead.First_Contact_Attempt_Date),
+            First_Contact_Attempt_Date = COALESCE(
+                CASE 
+                    WHEN NULLIF(staging.First_Contact_Attempt_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.First_Contact_Attempt_Date, '')::TIMESTAMP 
+                    ELSE NULL 
+                END,
+                public.Lead.First_Contact_Attempt_Date
+            ),
             Action_Count = NULLIF(staging.Action_Count, '')::INT,
             Total_Contact_Attempts = NULLIF(staging.Total_Contact_Attempts, '')::INT,
-            Last_Action_Date = COALESCE(NULLIF(staging.Last_Action_Date, '')::TIMESTAMP, public.Lead.Last_Action_Date),
-            First_Assignment_Distribution_Date = COALESCE(NULLIF(staging.First_Assignment_Distribution_Date, '')::TIMESTAMP, public.Lead.First_Assignment_Distribution_Date),
+            Last_Action_Date = COALESCE(
+                CASE 
+                    WHEN NULLIF(staging.Last_Action_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.Last_Action_Date, '')::TIMESTAMP 
+                    ELSE NULL 
+                END,
+                public.Lead.Last_Action_Date
+            ),
+            First_Assignment_Distribution_Date = COALESCE(
+                CASE 
+                    WHEN NULLIF(staging.First_Assignment_Distribution_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.First_Assignment_Distribution_Date, '')::TIMESTAMP 
+                    ELSE NULL 
+                END,
+                public.Lead.First_Assignment_Distribution_Date
+            ),
             First_Assignment_Distribution_User = staging.First_Assignment_Distribution_User,
             Lead_Source_Group = staging.Lead_Source_Group,
             Creative = staging.Creative,
             Broker = staging.Broker,
             Opener = staging.Opener,
             IRA_Investment_Dollar = staging.IRA_Investment_Dollar,
-            Cash_Investment_Dollar = REPLACE(REPLACE(NULLIF(staging.Cash_Investment_Dollar, ''), '$', ''), ',', '')::DECIMAL(15, 2),
+            Cash_Investment_Dollar = staging.Cash_Investment_Dollar,
             Deal_Type = staging.Deal_Type,
             Transfer_Type = staging.Transfer_Type,
-            "TO_Date" = COALESCE(NULLIF(staging."TO_Date", '')::TIMESTAMP, public.Lead."TO_Date"),
+            "TO_Date" = COALESCE(
+                CASE 
+                    WHEN NULLIF(staging."TO_Date", '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging."TO_Date", '')::TIMESTAMP 
+                    ELSE NULL 
+                END,
+                public.Lead."TO_Date"
+            ),
             SF_Lead_ID = staging.SF_Lead_ID,
             Velocify_ID = staging.Velocify_ID,
             Original_Broker = staging.Original_Broker,
             SF_Lead_Owner = staging.SF_Lead_Owner,
             Junior_Broker = staging.Junior_Broker,
-            Last_Activity = COALESCE(NULLIF(staging.Last_Activity, '')::TIMESTAMP, public.Lead.Last_Activity),
+            Last_Activity = COALESCE(
+                CASE 
+                    WHEN NULLIF(staging.Last_Activity, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.Last_Activity, '')::TIMESTAMP 
+                    ELSE NULL 
+                END,
+                public.Lead.Last_Activity
+            ),
             Intellect_Client_ID = staging.Intellect_Client_ID,
             Intellect_Broker = staging.Intellect_Broker,
             First_Name = staging.First_Name,
@@ -250,13 +325,15 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
             SubID = staging.SubID
         FROM public.staging_lead AS staging
         WHERE public.Lead.Lead_ID = NULLIF(staging.Lead_ID, '')::INT;
+
+
         """
 
         execute_redshift_query(update_query)
 
         insert_query = f"""
-        INSERT INTO public.Lead (
-            Lead_ID, Source, Lead_Status, Lead_Score, Stage_ID, Milestone,Broker_Name, "Group", 
+       INSERT INTO public.Lead (
+            Lead_ID, Source, Lead_Status, Lead_Score, Stage_ID, Milestone, Broker_Name, "Group", 
             Date_Added, Last_Action, First_Contact_Attempt_Date, Action_Count, Total_Contact_Attempts, 
             Last_Action_Date, First_Assignment_Distribution_Date, First_Assignment_Distribution_User, 
             Lead_Source_Group, Creative, Broker, Opener, IRA_Investment_Dollar, Cash_Investment_Dollar, 
@@ -266,10 +343,7 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
             Zip_Postal_Code, Source_Code, SubID
         )
         SELECT DISTINCT
-            CASE 
-                WHEN NULLIF(staging.Lead_ID, '') IS NOT NULL THEN NULLIF(staging.Lead_ID, '')::INT
-                ELSE 0 -- or handle with a default value for Lead_ID
-            END AS Lead_ID,
+            NULLIF(staging.Lead_ID, '')::INT AS Lead_ID,
             staging.Source,
             staging.Lead_Status,
             staging.Lead_Score,
@@ -277,29 +351,53 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
             staging.Milestone,
             staging.Broker_Name,
             staging."Group",
-            NULLIF(staging.Date_Added, '')::TIMESTAMP AS Date_Added,
+            CASE 
+                WHEN NULLIF(staging.Date_Added, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                THEN NULLIF(staging.Date_Added, '')::TIMESTAMP
+                ELSE NULL 
+            END AS Date_Added,
             staging.Last_Action,
-            NULLIF(staging.First_Contact_Attempt_Date, '')::TIMESTAMP AS First_Contact_Attempt_Date,
+            CASE 
+                WHEN NULLIF(staging.First_Contact_Attempt_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                THEN NULLIF(staging.First_Contact_Attempt_Date, '')::TIMESTAMP
+                ELSE NULL 
+            END AS First_Contact_Attempt_Date,
             NULLIF(staging.Action_Count, '')::INT AS Action_Count,
             NULLIF(staging.Total_Contact_Attempts, '')::INT AS Total_Contact_Attempts,
-            NULLIF(staging.Last_Action_Date, '')::TIMESTAMP AS Last_Action_Date,
-            NULLIF(staging.First_Assignment_Distribution_Date, '')::TIMESTAMP AS First_Assignment_Distribution_Date,
+            CASE 
+                WHEN NULLIF(staging.Last_Action_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                THEN NULLIF(staging.Last_Action_Date, '')::TIMESTAMP
+                ELSE NULL 
+            END AS Last_Action_Date,
+            CASE 
+                WHEN NULLIF(staging.First_Assignment_Distribution_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                THEN NULLIF(staging.First_Assignment_Distribution_Date, '')::TIMESTAMP
+                ELSE NULL 
+            END AS First_Assignment_Distribution_Date,
             staging.First_Assignment_Distribution_User,
             staging.Lead_Source_Group,
             staging.Creative,
             staging.Broker,
             staging.Opener,
             staging.IRA_Investment_Dollar,
-            REPLACE(REPLACE(NULLIF(staging.Cash_Investment_Dollar, ''), '$', ''), ',', '')::DECIMAL(15, 2) AS Cash_Investment_Dollar,
+            staging.Cash_Investment_Dollar,
             staging.Deal_Type,
             staging.Transfer_Type,
-            NULLIF(staging."TO_Date", '')::TIMESTAMP AS "TO_Date",
+            CASE 
+                WHEN NULLIF(staging."TO_Date", '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                THEN NULLIF(staging."TO_Date", '')::TIMESTAMP
+                ELSE NULL 
+            END AS "TO_Date",
             staging.SF_Lead_ID,
             staging.Velocify_ID,
             staging.Original_Broker,
             staging.SF_Lead_Owner,
             staging.Junior_Broker,
-            NULLIF(staging.Last_Activity, '')::TIMESTAMP AS Last_Activity,
+            CASE 
+                WHEN NULLIF(staging.Last_Activity, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                THEN NULLIF(staging.Last_Activity, '')::TIMESTAMP
+                ELSE NULL 
+            END AS Last_Activity,
             staging.Intellect_Client_ID,
             staging.Intellect_Broker,
             staging.First_Name,
@@ -316,10 +414,14 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
             staging.Source_Code,
             staging.SubID
         FROM public.staging_lead AS staging
-        WHERE NULLIF(staging.Lead_ID, '') IS NOT NULL -- Ensures Lead_ID is not null
+        WHERE NULLIF(staging.Lead_ID, '')::INT IS NOT NULL
         AND NOT EXISTS (
-            SELECT 1 FROM public.Lead WHERE public.Lead.Lead_ID = NULLIF(staging.Lead_ID, '')::INT
+            SELECT 1 
+            FROM public.Lead 
+            WHERE public.Lead.Lead_ID = NULLIF(staging.Lead_ID, '')::INT
         );
+
+
         """
         # print(f"InsertQuery: {insert_query}")
         execute_redshift_query(insert_query)
@@ -329,11 +431,51 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         print("Starting table truncation...-2")
         execute_redshift_query(truncate_table_query_end)  # Waits for completion
         print("Table truncated successfully.-2")
+        after_count = get_table_row_count()
+        print(f"Row count after insert: {after_count}")
+        # Calculate inserted rows
+        inserted_rows = after_count - before_count
+        print(f"Rows inserted into public.lead: {inserted_rows}")
+        return inserted_rows
        
     except Exception as e:
         print(f"Error copying data to Redshift: {e}")
         raise
 
+def get_table_row_count():
+    try:
+        # Execute the query
+        query = "SELECT COUNT(*) FROM public.lead;"
+        response = client_redshift.execute_statement(
+            Database='dev',
+            SecretArn=secret_arn,
+            Sql=query,
+            ClusterIdentifier=cluster_id
+        )
+        statement_id = response['Id']
+        
+        # Wait for the query to complete
+        while True:
+            status_response = client_redshift.describe_statement(Id=statement_id)
+            if status_response['Status'] in ['FINISHED', 'FAILED', 'ABORTED']:
+                break
+            print(f"Waiting for row count query to complete... Current status: {status_response['Status']}")
+            time.sleep(1)
+
+        if status_response['Status'] == 'FINISHED':
+            # Fetch the result
+            result_response = client_redshift.get_statement_result(Id=statement_id)
+            records = result_response['Records']
+            # Extract the row count from the response
+            row_count = int(records[0][0]['longValue'])
+            print(f"Row count: {row_count}")
+            return row_count
+        else:
+            raise Exception(f"Query failed with status: {status_response['Status']}")
+
+    except Exception as e:
+        print(f"Error getting table row count: {e}")
+        raise
 def execute_redshift_query(query_str):
     """
     Execute a query in the Redshift cluster and wait for its completion.
@@ -365,5 +507,25 @@ def execute_redshift_query(query_str):
 
     except Exception as e:
         print(f"Error executing query: {str(e)}")
+        raise
+
+def send_email(subject, body):
+    return
+    try:
+        recipient_emails_env = os.getenv('SES_RECIPIENT_EMAILS', '')
+        # Split the emails into a list
+        recipient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
+        # recepient_emails=["sravya.v@quiddityinfotech.com","sravya.vemulapally@emeraldkey.com"]
+        ses_client.send_email(
+            Source=os.environ['SES_SOURCE_EMAIL'],
+            Destination={'ToAddresses': recepient_emails},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {'Text': {'Data': body}}
+            }
+        )
+        print("Email sent successfully.")
+    except Exception as e:
+        print(f"Error sending email: {e}")
         raise
 

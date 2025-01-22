@@ -1,3 +1,4 @@
 -AmazonS3FullAccess
 -SecretsManagerReadWrite
 -lambdaInvoke
+-AmazonSESFullAccess

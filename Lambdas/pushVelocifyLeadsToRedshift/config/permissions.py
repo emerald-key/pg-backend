@@ -4,3 +4,4 @@
 -AmazonRedshiftQueryEditor
 -AmazonS3FullAccess
 -SecretsManagerReadWrite
+-AmazonSESFullAccess
