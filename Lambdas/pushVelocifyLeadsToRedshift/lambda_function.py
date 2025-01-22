@@ -510,7 +510,6 @@ def execute_redshift_query(query_str):
         raise
 
 def send_email(subject, body):
-    return
     try:
         recipient_emails_env = os.getenv('SES_RECIPIENT_EMAILS', '')
         # Split the emails into a list
