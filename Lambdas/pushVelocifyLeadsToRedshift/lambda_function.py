@@ -95,12 +95,65 @@ def execute_redshift_query(query_str):
 
 def lambda_handler(event, context):
     print(f"Entered lambda_handler: {event}")
-    event = {
-        'bucket_name': 'raw-velocify-leads',
-        'input_file_key': 'AI_full_download_20250121_0803279940_jan2025.csv',
-        'output_file_key': 'processed/AI_full_download_20250121_0803279940_jan2025.csv',
-        'table_name': 'public.staging_lead',
-        'column_mapping': {
+    # event = {
+    #     'bucket_name': 'raw-velocify-leads',
+    #     'input_file_key': 'AI_full_download_20250121_0803279940_jan2025.csv',
+    #     'output_file_key': 'processed/AI_full_download_20250121_0803279940_jan2025.csv',
+    #     'table_name': 'public.staging_lead',
+    #     'column_mapping': {
+    #         'Id': 'Lead_ID',
+    #         'Lead Source': 'Source',
+    #         'Status': 'Lead_Status',
+    #         'Lead Score #': 'Lead_Score',
+    #         'Milestone': 'Milestone',
+    #         'User':'Broker_Name',
+    #         'Group': '"Group"',
+    #         'Date Added': 'Date_Added',
+    #         'Last Action': 'Last_Action',
+    #         'First Contact Attempt Date': 'First_Contact_Attempt_Date',
+    #         'Action Count': 'Action_Count',
+    #         'Total Contact Attempts': 'Total_Contact_Attempts',
+    #         'Last Action Date': 'Last_Action_Date',
+    #         'First Assignment / Distribution Date': 'First_Assignment_Distribution_Date',
+    #         'First Assignment / Distribution User': 'First_Assignment_Distribution_User',
+    #         'Lead Source Group': 'Lead_Source_Group',
+    #         'Creative': 'Creative',
+    #         'Broker': 'Broker',
+    #         'Opener': 'Opener',
+    #         'IRA - Investment Dollar': 'IRA_Investment_Dollar',
+    #         'Cash - Investment Dollar': 'Cash_Investment_Dollar',
+    #         'Deal Type': 'Deal_Type',
+    #         'Transfer Type': 'Transfer_Type',
+    #         'TO Date': '"TO_Date"',
+    #         'SF Lead ID': 'SF_Lead_ID',
+    #         'Velocify ID': 'Velocify_ID',
+    #         'Original Broker': 'Original_Broker',
+    #         'SF Lead Owner': 'SF_Lead_Owner',
+    #         'Junior Broker': 'Junior_Broker',
+    #         'Last Activity': 'Last_Activity',
+    #         'Intellect Client ID': 'Intellect_Client_ID',
+    #         'Intellect Broker': 'Intellect_Broker',
+    #         'First Name': 'First_Name',
+    #         'Last Name': 'Last_Name',
+    #         'Home Phone': 'Home_Phone',
+    #         'Work Phone': 'Work_Phone',
+    #         'Mobile Phone': 'Mobile_Phone',
+    #         'Email': 'Email',
+    #         'Secondary E-Mail': 'Secondary_Email',
+    #         'Address': 'Address',
+    #         'City': 'City',
+    #         'State': 'State',
+    #         'Zip/Postal Code': 'Zip_Postal_Code',
+    #         'Source Code': 'Source_Code',
+    #         'SubID': 'SubID'
+    #     }
+
+    # }
+    bucket_name = os.environ.get('bucket_name')
+    input_file_key = event['Records'][0]['s3']['object']['key']
+    output_file_key = f"processed/{input_file_key}"
+    table_name = 'public.staging_lead'
+    column_mapping = {
             'Id': 'Lead_ID',
             'Lead Source': 'Source',
             'Status': 'Lead_Status',
@@ -147,13 +200,6 @@ def lambda_handler(event, context):
             'Source Code': 'Source_Code',
             'SubID': 'SubID'
         }
-
-    }
-    bucket_name = event['bucket_name']
-    input_file_key = event['input_file_key']
-    output_file_key = f"processed/{input_file_key}"
-    table_name = event['table_name']
-    column_mapping = event['column_mapping']
     try:
         # Step 1: Truncate the staging table
         truncate_table_query = f"TRUNCATE TABLE {table_name};"

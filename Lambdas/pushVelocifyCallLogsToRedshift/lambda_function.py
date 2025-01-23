@@ -192,11 +192,10 @@ def lambda_handler(event, context):
     #     'bucket_name': 'raw-velocify-calllogs',
     #     'file_key': 'Lm32481_CallHistory_091723_bd11e570-5d6a-403d-be5a-9d478983d703_jan72025.csv',
     # }
-    event = {
-        'bucket_name': 'raw-velocify-calllogs',
-        'file_key': 'testCallLogs.csv',
-    }
-    
+    # event = {
+    #     'bucket_name': 'raw-velocify-calllogs',
+    #     'file_key': 'testCallLogs.csv',
+    # }
     
     # Input and output details
     bucket_name = event['bucket_name']

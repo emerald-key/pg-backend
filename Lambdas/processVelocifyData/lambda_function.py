@@ -24,8 +24,9 @@ def lambda_handler(event, context):
         print("Triggered from s3")
         file_key  = event['Records'][0]['s3']['object']['key']
     
-    #Invoke redshift lambda
+    # Invoke redshift lambda
     invoke_redshift_lambda(file_key,source_bucket_name)
+    # file_key = os.environ.get('file_key')
 
     # Start tracking time
     start_time = time.time()
