@@ -216,7 +216,13 @@ def lambda_handler(event, context):
         'Prospect Number':'Prospect_Number',
         'Inbound Number':'Inbound_Number'
     }
-
+    # Skip processing if the file is in the "processed/" folder
+    if input_file_key.startswith('processed/'):
+        print(f"Skipping file: {input_file_key}")
+        return {
+            'statusCode': 200,
+            'body': f"Skipped processing for file: {input_file_key}"
+        }
     try:
         # Step 1: Truncate the staging table
         truncate_table_query = f"TRUNCATE TABLE {table_name};"
@@ -268,7 +274,7 @@ def lambda_handler(event, context):
 
 def send_email(subject, body):
     try:
-        recipient_emails_env = os.getenv('SES_RECIPIENT_EMAILS', '')
+        recipient_emails_env = os.environ.get('SES_RECIPIENT_EMAILS', '')
         # Split the emails into a list
         recipient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
         ses_client.send_email(

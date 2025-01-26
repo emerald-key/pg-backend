@@ -200,6 +200,13 @@ def lambda_handler(event, context):
             'Source Code': 'Source_Code',
             'SubID': 'SubID'
         }
+    # Skip processing if the file is in the "processed/" folder
+    if input_file_key.startswith('processed/'):
+        print(f"Skipping file: {input_file_key}")
+        return {
+            'statusCode': 200,
+            'body': f"Skipped processing for file: {input_file_key}"
+        }
     try:
         # Step 1: Truncate the staging table
         truncate_table_query = f"TRUNCATE TABLE {table_name};"
@@ -557,7 +564,7 @@ def execute_redshift_query(query_str):
 
 def send_email(subject, body):
     try:
-        recipient_emails_env = os.getenv('SES_RECIPIENT_EMAILS', '')
+        recipient_emails_env = os.environ.get('SES_RECIPIENT_EMAILS', '')
         # Split the emails into a list
         recipient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
         # recepient_emails=["sravya.v@quiddityinfotech.com","sravya.vemulapally@emeraldkey.com"]

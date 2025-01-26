@@ -218,11 +218,13 @@ CREATE TABLE public.Transcript (
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
     Transcript_Url VARCHAR
 );
+DROP TABLE public.lead_log;
 
+DROP TABLE public.staging_lead_log;
 
-TRUNCATE TABLE public.lead;
+TRUNCATE TABLE public.lead_log;
 
-TRUNCATE TABLE public.staging_lead;
+TRUNCATE TABLE public.staging_lead_log;
 
 
 CREATE TABLE public.lead_log (
@@ -234,51 +236,23 @@ CREATE TABLE public.lead_log (
     Log_Note VARCHAR(255),
     Log_Contact VARCHAR(255),
     Lead_ID INT REFERENCES public.Lead(Lead_ID),
-    Date_Added TIMESTAMP,
-    Email VARCHAR(255),
-    Lead_Source VARCHAR(255),
     Campaign_Name VARCHAR(255),
     Affiliate_Name VARCHAR(255),
-    Source_Code VARCHAR(255),
-    Total_Contact_Attempts INT,
-    Creative VARCHAR(255),
     Status VARCHAR(255),
-    "User" VARCHAR(255),
-    Lead_Score INT,
-    Last_Action VARCHAR(255),
-    Last_Action_Date TIMESTAMP,
-    Last_Contact_Attempt_Date TIMESTAMP,
-    IRA_Investment_Dollar FLOAT,
-    Cash_Investment_Dollar FLOAT,
-    First_Assignment_Distribution_User VARCHAR(255),
-    "TO_Date" TIMESTAMP
+    Last_Contact_Attempt_Date TIMESTAMP
 );
 
 CREATE TABLE public.staging_lead_log (
     Lead_Log_Id VARCHAR PRIMARY KEY,
     Log_Type VARCHAR(255),
     Log_Actor VARCHAR(255),
-    Log_Date VARCHAR(255),
+    Log_Date VARCHAR,
     Log_Result VARCHAR(255),
     Log_Note VARCHAR(255),
     Log_Contact VARCHAR(255),
-    Lead_ID VARCHAR(255),
-    Date_Added VARCHAR(255),
-    Email VARCHAR(255),
-    Lead_Source VARCHAR(255),
+    Lead_ID VARCHAR,
     Campaign_Name VARCHAR(255),
     Affiliate_Name VARCHAR(255),
-    Source_Code VARCHAR(255),
-    Total_Contact_Attempts VARCHAR(255),
-    Creative VARCHAR(255),
     Status VARCHAR(255),
-    "User" VARCHAR(255),
-    Lead_Score VARCHAR(255),
-    Last_Action VARCHAR(255),
-    Last_Action_Date VARCHAR(255),
-    Last_Contact_Attempt_Date VARCHAR(255),
-    IRA_Investment_Dollar VARCHAR(255),
-    Cash_Investment_Dollar VARCHAR(255),
-    First_Assignment_Distribution_User VARCHAR(255),
-    "TO_Date" VARCHAR(255)
+    Last_Contact_Attempt_Date VARCHAR
 );
