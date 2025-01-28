@@ -218,41 +218,41 @@ CREATE TABLE public.Transcript (
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
     Transcript_Url VARCHAR
 );
-DROP TABLE public.lead_log;
+DROP TABLE public.Lead_Log;
 
 DROP TABLE public.staging_lead_log;
 
-TRUNCATE TABLE public.lead_log;
+TRUNCATE TABLE public.Lead_Log;
 
 TRUNCATE TABLE public.staging_lead_log;
 
 
-CREATE TABLE public.lead_log (
+CREATE TABLE public.Lead_Log (
     Lead_Log_Id VARCHAR PRIMARY KEY,
-    Log_Type VARCHAR(255),
-    Log_Actor VARCHAR(255),
+    Log_Type VARCHAR,
+    Log_Actor VARCHAR,
     Log_Date TIMESTAMP,
-    Log_Result VARCHAR(255),
-    Log_Note VARCHAR(255),
-    Log_Contact VARCHAR(255),
-    Lead_ID INT REFERENCES public.Lead(Lead_ID),
-    Campaign_Name VARCHAR(255),
-    Affiliate_Name VARCHAR(255),
-    Status VARCHAR(255),
+    Log_Result VARCHAR,
+    Log_Note VARCHAR,
+    Log_Contact VARCHAR,
+    Lead_ID INT REFERENCES public.Lead(Lead_ID) NULL,
+    Campaign_Name VARCHAR,
+    Affiliate_Name VARCHAR,
+    Status VARCHAR,
     Last_Contact_Attempt_Date TIMESTAMP
 );
 
-CREATE TABLE public.staging_lead_log (
+CREATE TABLE public.staging_Lead_Log (
     Lead_Log_Id VARCHAR PRIMARY KEY,
-    Log_Type VARCHAR(255),
-    Log_Actor VARCHAR(255),
+    Log_Type VARCHAR,
+    Log_Actor VARCHAR,
     Log_Date VARCHAR,
-    Log_Result VARCHAR(255),
-    Log_Note VARCHAR(255),
-    Log_Contact VARCHAR(255),
-    Lead_ID VARCHAR,
-    Campaign_Name VARCHAR(255),
-    Affiliate_Name VARCHAR(255),
-    Status VARCHAR(255),
+    Log_Result VARCHAR,
+    Log_Note VARCHAR,
+    Log_Contact VARCHAR,
+    Lead_ID INT,
+    Campaign_Name VARCHAR,
+    Affiliate_Name VARCHAR,
+    Status VARCHAR,
     Last_Contact_Attempt_Date VARCHAR
 );
