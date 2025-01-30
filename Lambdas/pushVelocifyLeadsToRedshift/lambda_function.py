@@ -246,7 +246,7 @@ def lambda_handler(event, context):
 
     except Exception as e:
         print(f"Error: {str(e)}")
-        err_subject = "Error Processing CSV To Redshift"
+        err_subject = "Leads:Error Processing CSV To Redshift"
         err_body = f"""
         Error : {str(e)}
         """

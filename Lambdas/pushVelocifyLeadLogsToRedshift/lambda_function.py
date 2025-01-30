@@ -36,9 +36,17 @@ ALLOWED_LOG_TYPES = [
 
 def lambda_handler(event, context):
     try:
-        bucket_name = "raw-velocify-leadlogs"
-        object_key = "lead_logs_AI_2023_Q3.csv"
-        
+        # bucket_name = "raw-velocify-leadlogs"
+        # object_key = "Lead_logs_AI_2024 Q4.csv"
+        bucket_name = os.environ.get('bucket_name')
+        object_key = event['Records'][0]['s3']['object']['key']
+        # Skip processing if the file is in the "processed/" folder
+        if object_key.startswith('processed/'):
+            print(f"Skipping file: {object_key}")
+            return {
+                'statusCode': 200,
+                'body': f"Skipped processing for file: {object_key}"
+            }
         # Mapping of input column names to desired column names
         COLUMN_MAPPING = {
             "Log Type": "Log_Type",
@@ -125,6 +133,15 @@ def lambda_handler(event, context):
 
     except Exception as e:
         print(f"Error processing file: {str(e)}")
+        err_subject = "LeadLogs:Error Processing CSV To Redshift"
+        err_body = f"""
+        Error : {str(e)}
+        """
+        send_email(err_subject, err_body)
+        return {
+            'statusCode': 500,
+            'body': f"Failed to process file: {str(e)}"
+        }
         return {
             "statusCode": 500,
             "body": json.dumps(f"Error processing CSV: {str(e)}")
@@ -250,7 +267,6 @@ def remove_duplicates_and_insert_to_lead_log(table_name):
         print(f"Error removing duplicates and inserting into lead_log: {e}")
         raise
 
-
 def execute_redshift_query(query_str):
     """
     Execute a query in the Redshift cluster and wait for its completion.
@@ -282,4 +298,22 @@ def execute_redshift_query(query_str):
 
     except Exception as e:
         print(f"Error executing query: {str(e)}")
+        raise
+def send_email(subject, body):
+    try:
+        recipient_emails_env = os.environ.get('SES_RECIPIENT_EMAILS', '')
+        # Split the emails into a list
+        recipient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
+        # recepient_emails=["sravya.v@quiddityinfotech.com","sravya.vemulapally@emeraldkey.com"]
+        ses_client.send_email(
+            Source=os.environ['SES_SOURCE_EMAIL'],
+            Destination={'ToAddresses': recepient_emails},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {'Text': {'Data': body}}
+            }
+        )
+        print("Email sent successfully.")
+    except Exception as e:
+        print(f"Error sending email: {e}")
         raise
