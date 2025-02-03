@@ -31,6 +31,7 @@ Priority Gold/
 
 ## Folder Documentation
 
+- [EC2](./EC2/README.md) 
 - [EventBridge](./EventBridge/README.md)  
 - [IAM](./IAM/README.md)  
 - [Lambdas](./Lambdas/README.md)  
