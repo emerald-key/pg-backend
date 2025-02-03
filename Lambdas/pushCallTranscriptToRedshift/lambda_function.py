@@ -23,55 +23,46 @@ client_redshift = session.client("redshift-data", config=config)
 
 def lambda_handler(event, context):
     try:
-        event = {
-            'bucket_name': "raw-velocify-callrecording-transcriptions",
-            'file_key': "0000287D-A7E1-4B37-B5B6-690344370ED9.json"
-        }
+        # event = {
+        #     'bucket_name': "raw-velocify-callrecording-transcriptions",
+        #     'file_key': "0000287D-A7E1-4B37-B5B6-690344370ED9.json"
+        # }
+        bucket_name = os.environ.get('bucket_name')
+        for record in event.get("Records", []):
+            file_key = record['s3']['object']['key']
+            # Read the JSON file from S3
+            json_data = read_json_from_s3(bucket_name, file_key)
 
-        # Extract bucket and key from the event
-        bucket_name = event['bucket_name']
-        file_key = event['file_key']
+            # Extract data from the JSON
+            transcript_id = json_data['transcript_id']
+            call_id = json_data['call_id']
+            transcript_url = json_data['transcript_url']
 
-        # Read the JSON file from S3
-        json_data = read_json_from_s3(bucket_name, file_key)
+            # Construct SQL queries
+            delete_sql_query = f"""
+            DELETE FROM public.Transcript WHERE Call_ID = '{call_id}';
+            """
+            insert_sql_query = f"""
+            INSERT INTO public.Transcript (Transcript_ID, Call_ID, Transcript_Url)
+            VALUES ('{transcript_id}', '{call_id}', '{transcript_url}');
+            """
 
-        # Extract data from the JSON
-        call_id = json_data['call_id']
-        transcript = json_data['transcription']
-        talk_time_percentages = json_data['talk_time_percentages']
+            # Execute the queries
+            execute_redshift_query(delete_sql_query)
+            execute_redshift_query(insert_sql_query)
 
-        talk_time_a = int(talk_time_percentages.get('A', 0))
-        talk_time_b = int(talk_time_percentages.get('B', 0))
-        talk_time_c = int(talk_time_percentages.get('C', 0))  # Default 0 if not present
+            print("Data successfully inserted/updated in Redshift.")
+            return {
+                'statusCode': 200,
+                'body': 'Data processed successfully.'
+            }
 
-        # Generate a unique Transcript_ID
-        transcript_id = str(uuid.uuid4())
-
-        # Construct SQL queries
-        delete_sql_query = f"""
-        DELETE FROM public.Transcript WHERE Call_ID = '{call_id}';
-        """
-        insert_sql_query = f"""
-        INSERT INTO public.Transcript (Transcript_ID, Call_ID, Transcript, TalkTime_Percentage_A, TalkTime_Percentage_B, TalkTime_Percentage_C)
-        VALUES ('{transcript_id}', '{call_id}', $$ {transcript} $$, {talk_time_a}, {talk_time_b}, {talk_time_c});
-        """
-
-        # Execute the queries
-        execute_redshift_query(delete_sql_query)
-        execute_redshift_query(insert_sql_query)
-
-        print("Data successfully inserted/updated in Redshift.")
-        return {
-            'statusCode': 200,
-            'body': 'Data processed successfully.'
-        }
-
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': f"Failed to process data: {str(e)}"
-        }
+        except Exception as e:
+            print(f"Error: {str(e)}")
+            return {
+                'statusCode': 500,
+                'body': f"Failed to process data: {str(e)}"
+            }
 
 def read_json_from_s3(bucket_name, file_key):
     """

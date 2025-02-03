@@ -292,7 +292,6 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
             Source = staging.Source,
             Lead_Status = staging.Lead_Status,
             Lead_Score = staging.Lead_Score,
-            Stage_ID = NULLIF(staging.Stage_ID, '')::INT,
             Milestone = staging.Milestone,
             Broker_Name = staging.Broker_Name,
             "Group" = staging."Group",
@@ -386,7 +385,7 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
 
         insert_query = f"""
        INSERT INTO public.Lead (
-            Lead_ID, Source, Lead_Status, Lead_Score, Stage_ID, Milestone, Broker_Name, "Group", 
+            Lead_ID, Source, Lead_Status, Lead_Score, Milestone, Broker_Name, "Group", 
             Date_Added, Last_Action, First_Contact_Attempt_Date, Action_Count, Total_Contact_Attempts, 
             Last_Action_Date, First_Assignment_Distribution_Date, First_Assignment_Distribution_User, 
             Lead_Source_Group, Creative, Broker, Opener, IRA_Investment_Dollar, Cash_Investment_Dollar, 
@@ -400,7 +399,6 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
             staging.Source,
             staging.Lead_Status,
             staging.Lead_Score,
-            NULLIF(staging.Stage_ID, '')::INT AS Stage_ID,
             staging.Milestone,
             staging.Broker_Name,
             staging."Group",
