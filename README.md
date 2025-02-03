@@ -8,8 +8,6 @@ Priority Gold integrates with third-party services like Velocify to manage data 
 
 ## AWS Services Used
 
-Here’s the corrected version with more appropriate descriptions for each service:
-
 - **AWS EC2:** For running resource-intensive tasks like transcription processing using Assembly AI.
 - **AWS IAM:** For managing secure access and permissions to AWS resources like S3, Lambda, and Redshift.
 - **AWS Lambda:** For serverless data processing, transformation, and automation tasks across various services.
