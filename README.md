@@ -8,17 +8,23 @@ Priority Gold integrates with third-party services like Velocify to manage data 
 
 ## AWS Services Used
 
-- **AWS Lambda:** For serverless processing, data transformation, and automation.
-- **Amazon S3:** For storing raw data, processed files, and transcription text files.
-- **Amazon Redshift:** For data warehousing and analytics.
-- **Amazon EventBridge:** For event-driven architecture and automation triggers.
-- **AWS Secrets Manager:** For secure storage of credentials and sensitive information.
-- **Environment Variables:** For managing configuration settings securely.
+Here’s the corrected version with more appropriate descriptions for each service:
+
+- **AWS EC2:** For running resource-intensive tasks like transcription processing using Assembly AI.
+- **AWS IAM:** For managing secure access and permissions to AWS resources like S3, Lambda, and Redshift.
+- **AWS Lambda:** For serverless data processing, transformation, and automation tasks across various services.
+- **AWS Lambda Layers:** For sharing libraries and dependencies across multiple Lambda functions to reduce redundancy and streamline deployment.
+- **Amazon S3:** For storing raw data, processed files, transcription text files, and other artifacts.
+- **Amazon Redshift:** For data warehousing, storage, and running complex analytics on processed data.
+- **Amazon EventBridge:** For implementing event-driven architecture and triggering automated tasks based on predefined schedules or events.
+- **AWS Secrets Manager:** For securely storing and managing credentials, API keys, and other sensitive information.
+- **Environment Variables:** For securely managing configuration settings, such as database credentials and other runtime parameters.
 
 ## Project Structure
 
 ```
 Priority Gold/
+├── EC2/
 ├── EventBridge/
 ├── IAM/
 ├── Lambdas/
@@ -51,5 +57,5 @@ Priority Gold/
 
 ## Contact
 
-For any questions or support, please refer to the relevant folder documentation or contact the development team.
+For any questions or support, please refer to the relevant folder documentation.
 
