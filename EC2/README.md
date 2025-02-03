@@ -1,7 +1,3 @@
-Here’s a README file template for your EC2 instance folder that includes the `pg-transcription` directory and the `transcribe.py` script:
-
----
-
 # **pg-transcription** 
 
 This directory contains the `transcribe.py` script, which uses Assembly AI to transcribe audio recordings from an S3 bucket. The transcriptions are stored in two S3 buckets: one for the structured transcription data and another for the plain text file format of the transcript.

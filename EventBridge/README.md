@@ -1,7 +1,3 @@
-Here’s a README template for the **EventBridge** folder, detailing the **Schedules** and their corresponding `details.py` files:
-
----
-
 # **EventBridge - Schedules**
 
 This directory contains the configuration for various EventBridge schedules that are set to trigger specific Lambda functions for the Priority Gold project. The schedules are used to automate tasks like deleting old files from S3 buckets.
