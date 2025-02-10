@@ -7,6 +7,11 @@ from botocore.client import Config
 import time
 import io
 import uuid
+import logging
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 
 s3_client = boto3.client('s3')
@@ -36,7 +41,7 @@ config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config = config)
 
 def lambda_handler(event, context):
-    print(f"Entered lambda_handler: {event}")
+    logger.info(f"Entered lambda_handler: {event}")
     brokers = brokers_list()
     try:
         for broker in brokers :
@@ -75,7 +80,7 @@ def lambda_handler(event, context):
                 execute_redshift_query(insert_sql_query)
             
             except Exception as broker_error:
-                print(f"Error processing broker {broker}: {str(broker_error)}")
+                logger.info(f"Error processing broker {broker}: {str(broker_error)}")
         
         return {
             'statusCode': 200,
@@ -83,7 +88,7 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.info(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'body': f"Failed to process file: {str(e)}"
@@ -93,10 +98,10 @@ def execute_redshift_query(query_str):
     """
     Insert a record into the Redshift table.
     """
-    print(f"Executing query: {query_str}")
+    logger.info(f"Executing query: {query_str}")
     try:
         result = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id
@@ -104,7 +109,7 @@ def execute_redshift_query(query_str):
         return result
 
     except Exception as e:
-        print(f"Error executing query: {str(e)}")
+        logger.info(f"Error executing query: {str(e)}")
         raise
 
 

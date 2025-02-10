@@ -7,6 +7,13 @@ import time
 from io import StringIO
 from botocore.client import Config
 import re
+import logging
+from datetime import datetime
+import re
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 # Initialize clients
 s3_client = boto3.client('s3')
@@ -34,20 +41,60 @@ ALLOWED_LOG_TYPES = [
     "Cal. Called: Contacted","Called: Contacted","Contacted: Not Interested","Contacted: Does Not Qualify","Created","Status Change"
 ]
 
+def normalize_date_format(date_str):
+    """Convert various date formats to MM-DD-YYYY HH:MI:SS"""
+    if not date_str or date_str.strip() == '':
+        return None  # Handle empty or missing values
+    
+    # Normalize spaces (remove extra spaces)
+    date_str = ' '.join(date_str.strip().split())
+
+    try:
+        original_date = date_str  # Store the original date
+        formatted_date = None
+
+        # Format: MM-DD-YYYY HH:MI:SS (already correct)
+        if re.match(r'^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}$', date_str):
+            formatted_date = date_str
+
+        # Format: M/D/YYYY H:M:S AM/PM → Convert to MM-DD-YYYY HH:MI:SS
+        elif re.match(r'^\d{1,2}/\d{1,2}/\d{4} \d{1,2}:\d{1,2}(:\d{1,2})? (AM|PM)$', date_str, re.IGNORECASE):
+            dt = datetime.strptime(date_str, '%m/%d/%Y %I:%M:%S %p' if ':' in date_str else '%m/%d/%Y %I:%M %p')
+            formatted_date = dt.strftime('%m-%d-%Y %H:%M:%S')
+
+        # Format: M/D/YY H:M → Convert to MM-DD-YYYY HH:MI:SS
+        elif re.match(r'^\d{1,2}/\d{1,2}/\d{2} \d{1,2}:\d{2}$', date_str):
+            dt = datetime.strptime(date_str, '%m/%d/%y %H:%M')
+            formatted_date = dt.strftime('%m-%d-%Y %H:%M:%S')
+
+        # Format: YYYY-MM-DD HH:MI:SS → Convert to MM-DD-YYYY HH:MI:SS
+        elif re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$', date_str):
+            dt = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+            formatted_date = dt.strftime('%m-%d-%Y %H:%M:%S')
+
+        # Log the result
+        if formatted_date:
+            return formatted_date
+        else:
+            logger.warning(f"No matching format for: {original_date}")
+            return None
+
+    except ValueError as e:
+        logger.error(f"Error parsing date: {date_str}, Error: {e}")
+        return None  # Return None if parsing fails
+
 def lambda_handler(event, context):
     try:
-        # bucket_name = "raw-velocify-leadlogs"
-        # object_key = "Lead_logs_AI_2024 Q4.csv"
         bucket_name = os.environ.get('bucket_name')
         object_key = event['Records'][0]['s3']['object']['key']
         # Skip processing if the file is in the "processed/" folder
         if object_key.startswith('processed/'):
-            print(f"Skipping file: {object_key}")
+            logger.info(f"Skipping file: {object_key}")
             return {
                 'statusCode': 200,
                 'body': f"Skipped processing for file: {object_key}"
             }
-        # Mapping of input column names to desired column names
+        # # Mapping of input column names to desired column names
         COLUMN_MAPPING = {
             "Log Type": "Log_Type",
             "Log Actor": "Log_Actor",
@@ -63,9 +110,9 @@ def lambda_handler(event, context):
         }
         table_name = 'public.staging_Lead_Log'
         truncate_table_query = f"TRUNCATE TABLE {table_name};"
-        print("Starting table truncation...-1")
+        logger.info("Starting table truncation...-1")
         execute_redshift_query(truncate_table_query)  # Waits for completion
-        print("Table truncated successfully.-1")
+        logger.info("Table truncated successfully.-1")
         # Download the CSV file
         response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
         csv_content = response['Body'].read().decode('utf-8')
@@ -83,7 +130,9 @@ def lambda_handler(event, context):
                     row['Id'] = int(lead_id)  # Convert valid Lead_ID to integer
                 else:
                     row['Id'] = None  # Set invalid Lead_ID as None (will be NULL in Redshift)
-
+                # Normalize date formats
+                row['Log Date'] = normalize_date_format(row['Log Date'])
+                row['Last Contact Attempt Date'] = normalize_date_format(row['Last Contact Attempt Date'])
                 # Map columns based on COLUMN_MAPPING
                 mapped_row = {COLUMN_MAPPING[key]: value for key, value in row.items() if key in COLUMN_MAPPING}
                 mapped_row['Lead_Log_Id'] = str(uuid.uuid4())  # Generate a UUID for each row
@@ -91,7 +140,7 @@ def lambda_handler(event, context):
 
 
         if not filtered_rows:
-            print("No rows matched the allowed Log Results.")
+            logger.info("No rows matched the allowed Log Results.")
             return
 
         # Define new column names
@@ -111,28 +160,30 @@ def lambda_handler(event, context):
             Body=output_csv.getvalue().encode('utf-8')
         )
         
-        print(f"Processed file saved at: {output_key}")
+        logger.info(f"Processed file saved at: {output_key}")
+        # return
 
         # Step: Construct S3 path for the processed CSV
         s3_path = f"s3://{bucket_name}/{output_key}"
+        # s3_path = "s3://raw-velocify-leadlogs/processedTest/Lead_logs_AI_2024 Q4_processed.csv"
 
         # Step: Load data into Redshift using COPY
         column_list = list(COLUMN_MAPPING.values()) + ["Lead_Log_Id"]
 
         # Copy the data from S3 to Redshift
         copied_rows = copy_data_to_redshift(s3_path, table_name, column_list)
-        print(f"Rows copied to Redshift: {copied_rows}")
+        logger.info(f"Rows copied to Redshift: {copied_rows}")
 
         # Step: Remove duplicates and insert into the lead_log table
         remove_duplicates_and_insert_to_lead_log(table_name)
 
         return {
             "statusCode": 200,
-            "body": json.dumps(f"Processed file saved at {output_key} and data loaded into Redshift successfully.")
+            "body": json.dumps(f"Processed file saved  and data loaded into Redshift successfully.")
         }
 
     except Exception as e:
-        print(f"Error processing file: {str(e)}")
+        logger.info(f"Error processing file: {str(e)}")
         err_subject = "LeadLogs:Error Processing CSV To Redshift"
         err_body = f"""
         Error : {str(e)}
@@ -171,18 +222,18 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         TRUNCATECOLUMNS;
         """
         execute_redshift_query(copy_query)
-        print(f"Data copied successfully to Redshift.")
+        logger.info(f"Data copied successfully to Redshift.")
 
         # Optionally: Count the rows in Redshift before and after to verify
         before_count = get_table_row_count()
         after_count = get_table_row_count()
 
         inserted_rows = after_count - before_count
-        print(f"Rows inserted into {table_name}: {inserted_rows}")
+        logger.info(f"Rows inserted into {table_name}: {inserted_rows}")
         return inserted_rows
 
     except Exception as e:
-        print(f"Error copying data to Redshift: {e}")
+        logger.info(f"Error copying data to Redshift: {e}")
         raise
 
 def get_table_row_count():
@@ -190,7 +241,7 @@ def get_table_row_count():
         # Execute the query
         query = "SELECT COUNT(*) FROM public.lead_log;"
         response = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query,
             ClusterIdentifier=cluster_id
@@ -202,7 +253,7 @@ def get_table_row_count():
             status_response = client_redshift.describe_statement(Id=statement_id)
             if status_response['Status'] in ['FINISHED', 'FAILED', 'ABORTED']:
                 break
-            print(f"Waiting for row count query to complete... Current status: {status_response['Status']}")
+            logger.info(f"Waiting for row count query to complete... Current status: {status_response['Status']}")
             time.sleep(1)
 
         if status_response['Status'] == 'FINISHED':
@@ -211,13 +262,13 @@ def get_table_row_count():
             records = result_response['Records']
             # Extract the row count from the response
             row_count = int(records[0][0]['longValue'])
-            print(f"Row count: {row_count}")
+            logger.info(f"Row count: {row_count}")
             return row_count
         else:
             raise Exception(f"Query failed with status: {status_response['Status']}")
 
     except Exception as e:
-        print(f"Error getting table row count: {e}")
+        logger.info(f"Error getting table row count: {e}")
         raise
 def remove_duplicates_and_insert_to_lead_log(table_name):
     """
@@ -228,16 +279,15 @@ def remove_duplicates_and_insert_to_lead_log(table_name):
         # Step 1: Insert unique records into lead_log table
         insert_query = f"""
         INSERT INTO public.lead_log (
-        Lead_Log_Id, Log_Type, Log_Actor, Log_Date, Log_Result, Log_Note, Log_Contact, Lead_ID, Campaign_Name, Affiliate_Name,Status,Last_Contact_Attempt_Date
+            Lead_Log_Id, Log_Type, Log_Actor, Log_Date, Log_Result, Log_Note, Log_Contact, Lead_ID, Campaign_Name, Affiliate_Name, Status, Last_Contact_Attempt_Date
         )
         SELECT DISTINCT
             Lead_Log_Id,
             Log_Type,
             Log_Actor,
             CASE
-                WHEN Log_Date IS NULL THEN NULL
-                WHEN Log_Date = '' THEN NULL
-                ELSE TO_TIMESTAMP(Log_Date, 'YYYY-MM-DD HH24:MI:SS')
+                WHEN Log_Date IS NULL OR Log_Date = '' THEN NULL
+                ELSE TO_TIMESTAMP(Log_Date, 'MM-DD-YYYY HH24:MI:SS')
             END AS Log_Date,
             Log_Result,
             Log_Note,
@@ -247,24 +297,25 @@ def remove_duplicates_and_insert_to_lead_log(table_name):
             Affiliate_Name,
             Status,
             CASE
-                WHEN Last_Contact_Attempt_Date IS NULL THEN NULL
-                WHEN Last_Contact_Attempt_Date = '' THEN NULL
-                ELSE TO_TIMESTAMP(Last_Contact_Attempt_Date, 'YYYY-MM-DD HH24:MI:SS')
+                WHEN Last_Contact_Attempt_Date IS NULL OR Last_Contact_Attempt_Date = '' THEN NULL
+                ELSE TO_TIMESTAMP(Last_Contact_Attempt_Date, 'MM-DD-YYYY HH24:MI:SS')
             END AS Last_Contact_Attempt_Date
         FROM public.staging_lead_log
         WHERE NOT EXISTS (
-            SELECT 1 FROM public.Lead_Log WHERE public.Lead_Log.Lead_Log_Id = public.staging_Lead_Log.Lead_Log_Id
+            SELECT 1 FROM public.lead_log 
+            WHERE public.lead_log.Lead_Log_Id = public.staging_lead_log.Lead_Log_Id
         );
         """
         execute_redshift_query(insert_query)
-        print("Unique records inserted into lead_log.")
+        logger.info("Unique records inserted into lead_log.")
+        time.sleep(10)
         truncate_table_query_end = f"TRUNCATE TABLE {table_name};"
-        print("Starting table truncation...-2")
+        logger.info("Starting table truncation...-2")
         execute_redshift_query(truncate_table_query_end)  # Waits for completion
-        print("Table truncated successfully.-2")
+        logger.info("Table truncated successfully.-2")
 
     except Exception as e:
-        print(f"Error removing duplicates and inserting into lead_log: {e}")
+        logger.info(f"Error removing duplicates and inserting into lead_log: {e}")
         raise
 
 def execute_redshift_query(query_str):
@@ -274,13 +325,13 @@ def execute_redshift_query(query_str):
     try:
         # Execute the query
         response = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id
         )
         statement_id = response['Id']
-        print(f"Query submitted successfully. Statement ID: {statement_id}")
+        logger.info(f"Query submitted successfully. Statement ID: {statement_id}")
 
         # Wait for the query to complete
         while True:
@@ -288,22 +339,24 @@ def execute_redshift_query(query_str):
             status = query_status['Status']
             if status in ['FINISHED', 'FAILED', 'ABORTED']:
                 break
-            print(f"Waiting for query to complete... Current status: {status}")
+            logger.info(f"Waiting for query to complete... Current status: {status}")
         
         if status == 'FINISHED':
-            print("Query executed successfully.")
+            logger.info("Query executed successfully.")
             return query_status
         else:
             raise Exception(f"Query execution failed. Status: {status}, Error: {query_status.get('Error', 'Unknown error')}")
 
     except Exception as e:
-        print(f"Error executing query: {str(e)}")
+        logger.info(f"Error executing query: {str(e)}")
         raise
 def send_email(subject, body):
     try:
         recipient_emails_env = os.environ.get('SES_RECIPIENT_EMAILS', '')
+        logger.info(f"Recipient EmailsEnv: {recipient_emails_env}")
         # Split the emails into a list
-        recipient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
+        recepient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
+        logger.info(f"Recipient Emails: {recepient_emails}")
         # recepient_emails=["sravya.v@quiddityinfotech.com","sravya.vemulapally@emeraldkey.com"]
         ses_client.send_email(
             Source=os.environ['SES_SOURCE_EMAIL'],
@@ -313,7 +366,7 @@ def send_email(subject, body):
                 'Body': {'Text': {'Data': body}}
             }
         )
-        print("Email sent successfully.")
+        logger.info("Email sent successfully.")
     except Exception as e:
-        print(f"Error sending email: {e}")
+        logger.info(f"Error sending email: {e}")
         raise

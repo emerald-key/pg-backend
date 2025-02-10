@@ -3,6 +3,11 @@ import json
 import boto3
 import uuid
 from botocore.client import Config
+import logging
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 # Initialize AWS clients
 s3_client = boto3.client('s3')
@@ -51,14 +56,14 @@ def lambda_handler(event, context):
             execute_redshift_query(delete_sql_query)
             execute_redshift_query(insert_sql_query)
 
-            print("Data successfully inserted/updated in Redshift.")
+            logger.info("Data successfully inserted/updated in Redshift.")
             return {
                 'statusCode': 200,
                 'body': 'Data processed successfully.'
             }
 
         except Exception as e:
-            print(f"Error: {str(e)}")
+            logger.info(f"Error: {str(e)}")
             return {
                 'statusCode': 500,
                 'body': f"Failed to process data: {str(e)}"
@@ -73,23 +78,23 @@ def read_json_from_s3(bucket_name, file_key):
         content = response['Body'].read().decode('utf-8')
         return json.loads(content)
     except Exception as e:
-        print(f"Error reading JSON from S3: {str(e)}")
+        logger.info(f"Error reading JSON from S3: {str(e)}")
         raise
 
 def execute_redshift_query(query_str):
     """
     Executes a query on the Redshift cluster.
     """
-    print(f"Executing query: {query_str}")
+    logger.info(f"Executing query: {query_str}")
     try:
         result = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id
         )
-        print(f"Query executed successfully: {result}")
+        logger.info(f"Query executed successfully: {result}")
         return result
     except Exception as e:
-        print(f"Error executing query: {str(e)}")
+        logger.info(f"Error executing query: {str(e)}")
         raise

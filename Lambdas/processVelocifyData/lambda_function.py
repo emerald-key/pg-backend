@@ -5,23 +5,28 @@ import requests
 import time
 import json
 import os
+import logging
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 # Initialize S3 client and Lambda client
 s3_client = boto3.client('s3')
 lambda_client = boto3.client('lambda')
 
 def lambda_handler(event, context):
-    print(event)
+    logger.info(event)
     target_bucket_name = os.environ.get('target_bucket_name')
     source_bucket_name = os.environ.get('source_bucket_name')
     lambda_status = event.get("lambdaStatus", "s3Triggered")
-    print(f"lambda_status: {lambda_status}")
+    logger.info(f"lambda_status: {lambda_status}")
     if lambda_status == "invokedSelf":
-        print("Invoking self")
+        logger.info("Invoking self")
         file_key = event.get("file_key")
         start_index = event.get("start_index")
     else:
-        print("Triggered from s3")
+        logger.info("Triggered from s3")
         file_key  = event['Records'][0]['s3']['object']['key']
     
     # Invoke redshift lambda
@@ -34,8 +39,8 @@ def lambda_handler(event, context):
 
     # Get the start index from the event or default to 0
     start_index = event.get("start_index", 0)
-    print(f"startIndex: {start_index}")
-    print(f"fileKey: {file_key}")
+    logger.info(f"startIndex: {start_index}")
+    logger.info(f"fileKey: {file_key}")
     try:
         # Get the CSV file from S3
         response = s3_client.get_object(Bucket=source_bucket_name, Key=file_key)
@@ -49,9 +54,9 @@ def lambda_handler(event, context):
             # Check remaining time
             elapsed_time = time.time() - start_time
             if elapsed_time >= lambda_timeout_buffer:
-                print(f"Timeout approaching. Reinvoking Lambda at row {index}")
+                logger.info(f"Timeout approaching. Reinvoking Lambda at row {index}")
                 invoke_self(context, file_key, index)
-                print(f"Reinvoked Lambda at row {index}")
+                logger.info(f"Reinvoked Lambda at row {index}")
                 return {
                     'statusCode': 202,
                     'body': f'Reinvoked Lambda at row {index}'
@@ -72,15 +77,15 @@ def lambda_handler(event, context):
                         Body=recording_response.content
                     )
                 else:
-                    print(f"Failed to download recording: {recording_url}, Status Code: {recording_response.status_code}")
-        print("Recordings processed and saved successfully")
+                    logger.info(f"Failed to download recording: {recording_url}, Status Code: {recording_response.status_code}")
+        logger.info("Recordings processed and saved successfully")
         return {
             'statusCode': 200,
             'body': 'Recordings processed and saved successfully!'
         }
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.info(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'body': f"Failed to process file: {str(e)}"

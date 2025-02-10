@@ -3,6 +3,11 @@ import boto3
 import assemblyai as aai
 import json
 import uuid
+import logging
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 # Initialize S3 client
 s3_client = boto3.client('s3')
@@ -11,8 +16,8 @@ secrets_client = boto3.client('secretsmanager')
 # Lambda handler
 def lambda_handler(event, context):
     try:
-        # Print the received event for debugging
-        # print("Received event:", json.dumps(event, indent=2))
+        # logger.info the received event for debugging
+        # logger.info("Received event:", json.dumps(event, indent=2))
          # Retrieve API key from Secrets Manager
         assembly_ai_secret_name = os.environ.get('assemblyai_secret_name')
         aai.settings.api_key = get_secret(assembly_ai_secret_name)
@@ -33,16 +38,16 @@ def lambda_handler(event, context):
             # Download the audio file to Lambda's /tmp directory
             local_file_path = f"/tmp/{os.path.basename(file_key)}"
             try:
-                # print(f"Downloading {file_key} from bucket {source_bucket_name}...")
+                # logger.info(f"Downloading {file_key} from bucket {source_bucket_name}...")
                 s3_client.download_file(source_bucket_name, file_key, local_file_path)
 
                 # Transcribe the audio file
                 success, transcription_result = transcribe_recording(local_file_path)
 
                 # Log the transcription result
-                # print(f"Transcription Result for {file_key}:", transcription_result)
+                # logger.info(f"Transcription Result for {file_key}:", transcription_result)
                 if not success:
-                    print(f"Transcription failed for {file_key}: {transcription_result}")
+                    logger.info(f"Transcription failed for {file_key}: {transcription_result}")
                     continue
                 # Save the transcription result to the target bucket
                 transcript_id = str(uuid.uuid4())
@@ -65,7 +70,7 @@ def lambda_handler(event, context):
                     }
                 )
             except Exception as e:
-                print(f"Error processing file {file_key}: {e}")
+                logger.info(f"Error processing file {file_key}: {e}")
             finally:
                 # Clean up temporary files
                 if os.path.exists(local_file_path):
@@ -77,7 +82,7 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        print(f"Error: {e}")
+        logger.info(f"Error: {e}")
         return {
             'statusCode': 500,
             'body': str(e)
@@ -141,9 +146,9 @@ def save_results_to_s3(bucket_name, file_name, data):
             Body=json_data,
             ContentType="application/json"
         )
-        print(f"Successfully saved file {file_name} to bucket {bucket_name}")
+        logger.info(f"Successfully saved file {file_name} to bucket {bucket_name}")
     except Exception as e:
-        print(f"Failed to save JSON file to S3: {e}")
+        logger.info(f"Failed to save JSON file to S3: {e}")
         raise
 
 # Save .txt transcription to S3 and return its URL
@@ -155,13 +160,13 @@ def save_text_to_s3(bucket_name, file_name, data):
             Body=data,
             ContentType="text/plain"
         )
-        # print(f"Saved text file {file_name} to bucket {bucket_name}.")
+        # logger.info(f"Saved text file {file_name} to bucket {bucket_name}.")
         # Generate the S3 object URL
         region = "us-east-1"
         url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{file_name}"
         return url
     except Exception as e:
-        print(f"Error saving text file to S3: {e}")
+        logger.info(f"Error saving text file to S3: {e}")
         raise
 
 def get_secret(secret_name):
@@ -174,5 +179,5 @@ def get_secret(secret_name):
         else:
             raise ValueError("SecretString is empty")
     except Exception as e:
-        print(f"Error retrieving secret {secret_name}: {e}")
+        logger.info(f"Error retrieving secret {secret_name}: {e}")
         raise

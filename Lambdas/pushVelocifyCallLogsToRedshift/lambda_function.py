@@ -5,6 +5,11 @@ import io
 import csv
 from botocore.client import Config
 import time
+import logging
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 # Initialize S3 client and Redshift client
 s3_client = boto3.client('s3')
@@ -54,9 +59,9 @@ def preprocess_csv(bucket_name, file_key, output_key, column_mapping):
         output_csv.seek(0)
 
         s3_client.put_object(Bucket=bucket_name, Key=output_key, Body=output_csv.getvalue())
-        print(f"Processed CSV uploaded to {output_key} in {bucket_name}")
+        logger.info(f"Processed CSV uploaded to {output_key} in {bucket_name}")
     except Exception as e:
-        print(f"Error preprocessing CSV: {e}")
+        logger.info(f"Error preprocessing CSV: {e}")
         raise
 
 
@@ -83,7 +88,7 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         execute_redshift_query(copy_query)
         # Get row count before insert
         before_count = get_table_row_count()
-        print(f"Row count before insert: {before_count}")
+        logger.info(f"Row count before insert: {before_count}")
         insert_query = f"""
         INSERT INTO public.call (
         Call_ID, Lead_ID, Broker_Name, Outcome, Call_Segment, Call_Type, Date_Time, Talk_Time, Prospect_Number, Inbound_Number
@@ -123,29 +128,29 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         );
         """
         execute_redshift_query(insert_query)
-        print("Data copied successfully to Redshift.")
+        logger.info("Data copied successfully to Redshift.")
 
         truncate_table_query_end = f"TRUNCATE TABLE {table_name};"
-        print("Starting table truncation...-2")
+        logger.info("Starting table truncation...-2")
         execute_redshift_query(truncate_table_query_end)  # Waits for completion
-        print("Table truncated successfully.-2")
+        logger.info("Table truncated successfully.-2")
         # Get the number of rows copied using PG_LAST_COPY_COUNT
         # count_query = "SELECT PG_LAST_COPY_COUNT();"
         # response = execute_redshift_query(count_query)
-        # print(f"countqueryresponse:{response}")
+        # logger.info(f"countqueryresponse:{response}")
         # copied_rows = int(response['Records'][0][0]['longValue'])
-        # print(f"Rows copied to Redshift: {copied_rows}")
+        # logger.info(f"Rows copied to Redshift: {copied_rows}")
          # Get row count after insert
         # return copied_rows
         after_count = get_table_row_count()
-        print(f"Row count after insert: {after_count}")
+        logger.info(f"Row count after insert: {after_count}")
         # Calculate inserted rows
         inserted_rows = after_count - before_count
-        print(f"Rows inserted into public.call: {inserted_rows}")
+        logger.info(f"Rows inserted into public.call: {inserted_rows}")
         return inserted_rows
        
     except Exception as e:
-        print(f"Error copying data to Redshift: {e}")
+        logger.info(f"Error copying data to Redshift: {e}")
         raise
 
 
@@ -154,7 +159,7 @@ def get_table_row_count():
         # Execute the query
         query = "SELECT COUNT(*) FROM public.call;"
         response = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query,
             ClusterIdentifier=cluster_id
@@ -166,7 +171,7 @@ def get_table_row_count():
             status_response = client_redshift.describe_statement(Id=statement_id)
             if status_response['Status'] in ['FINISHED', 'FAILED', 'ABORTED']:
                 break
-            print(f"Waiting for row count query to complete... Current status: {status_response['Status']}")
+            logger.info(f"Waiting for row count query to complete... Current status: {status_response['Status']}")
             time.sleep(1)
 
         if status_response['Status'] == 'FINISHED':
@@ -175,13 +180,13 @@ def get_table_row_count():
             records = result_response['Records']
             # Extract the row count from the response
             row_count = int(records[0][0]['longValue'])
-            print(f"Row count: {row_count}")
+            logger.info(f"Row count: {row_count}")
             return row_count
         else:
             raise Exception(f"Query failed with status: {status_response['Status']}")
 
     except Exception as e:
-        print(f"Error getting table row count: {e}")
+        logger.info(f"Error getting table row count: {e}")
         raise
 
 def lambda_handler(event, context):
@@ -218,7 +223,7 @@ def lambda_handler(event, context):
     }
     # Skip processing if the file is in the "processed/" folder
     if input_file_key.startswith('processed/'):
-        print(f"Skipping file: {input_file_key}")
+        logger.info(f"Skipping file: {input_file_key}")
         return {
             'statusCode': 200,
             'body': f"Skipped processing for file: {input_file_key}"
@@ -226,9 +231,9 @@ def lambda_handler(event, context):
     try:
         # Step 1: Truncate the staging table
         truncate_table_query = f"TRUNCATE TABLE {table_name};"
-        print("Starting table truncation...-1")
+        logger.info("Starting table truncation...-1")
         execute_redshift_query(truncate_table_query)  # Waits for completion
-        print("Table truncated successfully.-1")
+        logger.info("Table truncated successfully.-1")
 
         # Step 2: Preprocess the CSV
         preprocess_csv(bucket_name, input_file_key, output_file_key, column_mapping)
@@ -260,7 +265,7 @@ def lambda_handler(event, context):
             'body': 'CSV processed and data loaded into Redshift successfully.'
         }
     except Exception as e:
-        print(f"Error in lambda_handler: {e}")
+        logger.info(f"Error in lambda_handler: {e}")
         err_subject = "Error Processing CSV To Redshift"
         err_body = f"""
         Error : {str(e)}
@@ -274,9 +279,9 @@ def lambda_handler(event, context):
 
 def send_email(subject, body):
     try:
-        recipient_emails_env = os.environ.get('SES_RECIPIENT_EMAILS', '')
+        recipient_emails_env = os.environ('SES_RECIPIENT_EMAILS', '')
         # Split the emails into a list
-        recipient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
+        recepient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
         ses_client.send_email(
             Source=os.environ['SES_SOURCE_EMAIL'],
             Destination={'ToAddresses': recepient_emails},
@@ -285,9 +290,9 @@ def send_email(subject, body):
                 'Body': {'Text': {'Data': body}}
             }
         )
-        print("Email sent successfully.")
+        logger.info("Email sent successfully.")
     except Exception as e:
-        print(f"Error sending email: {e}")
+        logger.info(f"Error sending email: {e}")
         raise
 
 
@@ -298,13 +303,13 @@ def execute_redshift_query(query_str):
     try:
         # Execute the query
         response = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id
         )
         statement_id = response['Id']
-        print(f"Query submitted successfully. Statement ID: {statement_id}")
+        logger.info(f"Query submitted successfully. Statement ID: {statement_id}")
 
         # Wait for the query to complete
         while True:
@@ -312,15 +317,15 @@ def execute_redshift_query(query_str):
             status = query_status['Status']
             if status in ['FINISHED', 'FAILED', 'ABORTED']:
                 break
-            print(f"Waiting for query to complete... Current status: {status}")
+            logger.info(f"Waiting for query to complete... Current status: {status}")
         
         if status == 'FINISHED':
-            print("Query executed successfully.")
+            logger.info("Query executed successfully.")
             return query_status
         else:
             raise Exception(f"Query execution failed. Status: {status}, Error: {query_status.get('Error', 'Unknown error')}")
 
     except Exception as e:
-        print(f"Error executing query: {str(e)}")
+        logger.info(f"Error executing query: {str(e)}")
         raise
 

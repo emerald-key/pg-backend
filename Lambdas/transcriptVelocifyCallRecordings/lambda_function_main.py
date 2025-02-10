@@ -13,7 +13,7 @@ def lambda_handler(event, context):
         # Extract bucket and file key from the event
         source_bucket_name = os.environ.get('source_bucket_name')
         target_bucket_name = os.environ.get('target_bucket_name')
-        file_key = "0000FFA3-4093-45C4-9F7C-F4D839E6A708.mp3"
+        file_key = "test.mp3" #testing
         call_id = os.path.splitext(os.path.basename(file_key))[0]
 
         # Download the audio file to Lambda's /tmp directory

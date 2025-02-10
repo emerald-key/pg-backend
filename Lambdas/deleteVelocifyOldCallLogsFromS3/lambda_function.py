@@ -2,6 +2,11 @@ import os
 import json
 import boto3
 import time
+import logging
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 # Initialize S3 client and Lambda client
 s3_client = boto3.client('s3')
@@ -12,14 +17,14 @@ bucket_name = os.environ.get('bucket_name')  # Your S3 bucket name
 lambda_timeout_buffer = 840  # Buffer for Lambda timeout (14 minutes)
 
 def lambda_handler(event, context):
-    print(f"Entered lambda_handler: {event}")
+     logger.info(f"Entered lambda_handler: {event}")
     
     # Get the current time
     current_time = time.time()
     
     # Get the start index from the event or default to 0
     start_index = event.get("start_index", 0)
-    print(f"Start Index: {start_index}")
+     logger.info(f"Start Index: {start_index}")
     
     # List all objects in the bucket
     response = s3_client.list_objects_v2(Bucket=bucket_name)
@@ -31,7 +36,7 @@ def lambda_handler(event, context):
     for index, obj in enumerate(objects[start_index:], start=start_index):
         elapsed_time = time.time() - start_time
         if elapsed_time >= lambda_timeout_buffer:
-            print(f"Timeout approaching. Reinvoking Lambda at object {index}")
+             logger.info(f"Timeout approaching. Reinvoking Lambda at object {index}")
             invoke_self(context, index)
             return {
                 'statusCode': 202,
@@ -43,7 +48,7 @@ def lambda_handler(event, context):
 
         # Check if the object is older than 30 days (2592000 seconds)
         if current_time - last_modified > 2592000:
-            print(f"Deleting object: {obj['Key']}")
+             logger.info(f"Deleting object: {obj['Key']}")
             # Delete the object
             s3_client.delete_object(Bucket=bucket_name, Key=obj['Key'])
 
