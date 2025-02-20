@@ -97,6 +97,12 @@ Logs are printed to the console, and you can add further logging to capture deta
 This is the transcription of the call.
 ```
 
+# **pg-llm** 
+```
+This EC2 Instance is used for modeling by using data from redshift
+It has VPC which is used in redshift to access redshift using private subnet
+```
+
 ## Navigation
 
 - [Root README](../README.md)

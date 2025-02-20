@@ -28,9 +28,16 @@ def lambda_handler(event, context):
     else:
         logger.info("Triggered from s3")
         file_key  = event['Records'][0]['s3']['object']['key']
+        # Invoke redshift lambda
+        invoke_redshift_lambda(file_key,source_bucket_name)
     
-    # Invoke redshift lambda
-    invoke_redshift_lambda(file_key,source_bucket_name)
+    # Skip processing if the file is in the "processed/" folder
+    if file_key.startswith('processed/'):
+        logger.info(f"Skipping file: {file_key}")
+        return {
+            'statusCode': 200,
+            'body': f"Skipped processing for file: {file_key}"
+        }
     # file_key = os.environ.get('file_key')
 
     # Start tracking time

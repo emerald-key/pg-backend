@@ -30,9 +30,41 @@ config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config=config)
 
 
+def convert_to_seconds(time_str, call_id):
+    """
+    Converts a time duration string in the format 'hrs:min:sec' to total seconds.
+    Handles invalid inputs like '(N/A)' by returning None.
+    """
+    try:
+        print(f"Processing Call_ID: {call_id}, Time String: {time_str}")
+
+        if not time_str or time_str in ['N/A', '(N/A)', '']:  # Handle invalid cases
+            print(f"Skipping invalid time format for Call_ID: {call_id}")
+            return None
+
+        # Split into hours, minutes, and seconds
+        parts = time_str.split(':')
+        if len(parts) != 3:
+            print(f"Incorrect time format for Call_ID: {call_id} -> {time_str}")
+            return None  # If format is incorrect, return None
+
+        # Check if all parts are valid integers
+        if any(not part.isdigit() for part in parts):
+            print(f"Non-integer value found in time parts for Call_ID: {call_id} -> {parts}")
+            return None
+
+        hours, minutes, seconds = map(int, parts)  # Convert to integers
+        return hours * 3600 + minutes * 60 + seconds  # Convert to seconds
+
+    except ValueError:
+        print(f"Error converting time for Call_ID: {call_id}, Time String: {time_str}")
+        return None  # Return None if conversion fails
+
 def preprocess_csv(bucket_name, file_key, output_key, column_mapping):
     """
     Preprocess CSV: Rename columns based on `column_mapping` and filter unwanted columns.
+    Keeps the original 'Call Duration (hrs:min:sec)' column and converts 'Talk_Time' to seconds.
+
     :param bucket_name: S3 bucket containing the input file.
     :param file_key: Key of the input CSV file in the bucket.
     :param output_key: Key for the processed CSV file in S3.
@@ -44,28 +76,46 @@ def preprocess_csv(bucket_name, file_key, output_key, column_mapping):
         file_content = response['Body'].read().decode('utf-8')
         csv_file = io.StringIO(file_content)
 
-        # Read and filter the CSV
+        # Read and process the CSV
         csv_reader = csv.DictReader(csv_file)
         processed_rows = []
+
         for row in csv_reader:
             processed_row = {new_col: row[old_col] for old_col, new_col in column_mapping.items() if old_col in row}
+            
+            # Keep original call duration and convert Talk_Time
+            if 'Call Duration (hrs:min:sec)' in row:
+                processed_row['Call_Duration_Original'] = row['Call Duration (hrs:min:sec)']
+                
+                # Convert to seconds only if Talk_Time exists in the column mapping
+                processed_row['Talk_Time'] = convert_to_seconds(row['Call Duration (hrs:min:sec)'],row['Call Id'])
+            if 'Lead Id' in row:
+                lead_id = row['Lead Id'].strip()
+            
+            # Check if lead_id is a valid numeric string
+            if lead_id.isdigit():
+                processed_row['Lead_ID'] = int(lead_id)
             processed_rows.append(processed_row)
 
         # Write the processed CSV to a new S3 key
         output_csv = io.StringIO()
-        csv_writer = csv.DictWriter(output_csv, fieldnames=list(column_mapping.values()))
+        fieldnames = list(column_mapping.values()) + ['Talk_Time','Call_Duration_Original','Lead_ID']
+        csv_writer = csv.DictWriter(output_csv, fieldnames=fieldnames)
         csv_writer.writeheader()
         csv_writer.writerows(processed_rows)
         output_csv.seek(0)
 
+        # Upload to S3
         s3_client.put_object(Bucket=bucket_name, Key=output_key, Body=output_csv.getvalue())
         logger.info(f"Processed CSV uploaded to {output_key} in {bucket_name}")
+
     except Exception as e:
-        logger.info(f"Error preprocessing CSV: {e}")
+        logger.error(f"Error preprocessing CSV: {e}")
         raise
 
 
-def copy_data_to_redshift(s3_path, table_name, column_list):
+def copy_data_to_redshift(s3_path, table_name, main_column_list):
+    column_list = main_column_list + ['Talk_Time','Call_Duration_Original','Lead_ID']
     """
     COPY data from S3 to Redshift.
     :param s3_path: S3 path of the processed CSV.
@@ -90,15 +140,24 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         before_count = get_table_row_count()
         logger.info(f"Row count before insert: {before_count}")
         insert_query = f"""
+        -- Step 1: Insert missing leads into the lead table
+        INSERT INTO public.lead (Lead_ID)
+        SELECT DISTINCT staging_call.Lead_ID 
+        FROM public.staging_call AS staging_call
+        LEFT JOIN public.lead AS lead_table
+            ON staging_call.Lead_ID = lead_table.Lead_ID
+        WHERE lead_table.Lead_ID IS NULL
+        AND staging_call.Lead_ID IS NOT NULL;  -- Ensure no NULL values are inserted
+
+
+
+        -- Step 2: Insert calls into the call table
         INSERT INTO public.call (
-        Call_ID, Lead_ID, Broker_Name, Outcome, Call_Segment, Call_Type, Date_Time, Talk_Time, Prospect_Number, Inbound_Number
+            Call_ID, Lead_ID, Broker_Name, Outcome, Call_Segment, Call_Type, Date_Time, Talk_Time,Call_Duration_Original, Prospect_Number, Inbound_Number
         )
         SELECT DISTINCT
             Call_ID,
-            CASE
-                WHEN Lead_ID ~ '^\d+$' THEN Lead_ID::INT  -- Valid integer Lead_ID
-                ELSE NULL  -- Default invalid Lead_ID to NULL
-            END AS Lead_ID,
+            Lead_ID,
             Broker_Name,
             Outcome,
             Call_Segment,
@@ -107,19 +166,8 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
                 WHEN Date_Time = '' THEN NULL  -- Handle empty Date_Time
                 ELSE NULLIF(Date_Time, '')::TIMESTAMP  -- Safely cast to TIMESTAMP
             END AS Date_Time,
-            CASE
-                WHEN Talk_Time ~ '^\d+:\d+:\d+$' THEN (
-                    SPLIT_PART(Talk_Time, ':', 1)::INT * 3600 +  -- Parse HH
-                    SPLIT_PART(Talk_Time, ':', 2)::INT * 60 +   -- Parse MM
-                    SPLIT_PART(Talk_Time, ':', 3)::INT         -- Parse SS
-                )
-                WHEN Talk_Time ~ '^\d+:\d+$' THEN (
-                    SPLIT_PART(Talk_Time, ':', 1)::INT * 60 +  -- Parse MM
-                    SPLIT_PART(Talk_Time, ':', 2)::INT        -- Parse SS
-                )
-                WHEN Talk_Time ~ '^\d+$' THEN Talk_Time::INT   -- Handle raw integer durations
-                ELSE NULL  -- Default invalid Talk_Time to NULL
-            END AS Talk_Time,
+            Talk_Time,
+            Call_Duration_Original,
             Prospect_Number,
             Inbound_Number
         FROM public.staging_call
@@ -195,7 +243,7 @@ def lambda_handler(event, context):
     """
     # event = {
     #     'bucket_name': 'raw-velocify-calllogs',
-    #     'file_key': 'Lm32481_CallHistory_091723_bd11e570-5d6a-403d-be5a-9d478983d703_jan72025.csv',
+    #     'file_key': 'Lm32481_CallHistory_080708_8fa9149e-9c0d-4d65-8e14-f82534cec7cc_Jan24to262025.csv',
     # }
     # event = {
     #     'bucket_name': 'raw-velocify-calllogs',
@@ -206,18 +254,16 @@ def lambda_handler(event, context):
     bucket_name = event['bucket_name']
     input_file_key = event['file_key']
     output_file_key = f"processed/{input_file_key}"
-    table_name = 'public.staging_Call'
+    table_name = 'public.staging_call'
 
     # Column mapping: Map CSV column names to Redshift table column names
     column_mapping =  {
         'Call Id': 'Call_ID',
-        'Lead Id': 'Lead_ID',
         'User': 'Broker_Name',
         'Result': 'Outcome',
         'Call Segment':'Call_Segment',
         'Origin':'Call_Type',
         'Time':'Date_Time',
-        'Call Duration (hrs:min:sec)':'Talk_Time',
         'Prospect Number':'Prospect_Number',
         'Inbound Number':'Inbound_Number'
     }
@@ -279,9 +325,10 @@ def lambda_handler(event, context):
 
 def send_email(subject, body):
     try:
-        recipient_emails_env = os.environ('SES_RECIPIENT_EMAILS', '')
+        recipient_emails_env = os.environ.get('SES_RECIPIENT_EMAILS', '')
         # Split the emails into a list
         recepient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
+        print(f"recepient_emails:{recepient_emails}")
         ses_client.send_email(
             Source=os.environ['SES_SOURCE_EMAIL'],
             Destination={'ToAddresses': recepient_emails},

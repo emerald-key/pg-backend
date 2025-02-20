@@ -1,3 +1,17 @@
+CREATE TABLE public.staging_call (
+    Call_ID VARCHAR PRIMARY KEY,
+    Broker_Name VARCHAR,
+    Lead_ID Int,
+    Call_Type VARCHAR(255),
+    Date_Time VARCHAR(255),
+    Talk_Time INT,
+    Call_Duration_Original VARCHAR(255),
+    Outcome VARCHAR(255),
+    Call_Segment VARCHAR(255),
+    Inbound_Number VARCHAR(255),
+    Prospect_Number VARCHAR(255)
+);
+
 CREATE TABLE public.call (
     Call_ID VARCHAR PRIMARY KEY,
     Broker_Name VARCHAR,
@@ -5,19 +19,7 @@ CREATE TABLE public.call (
     Call_Type VARCHAR(255),
     Date_Time TIMESTAMP,
     Talk_Time INT,
-    Outcome VARCHAR(255),
-    Call_Segment VARCHAR(255),
-    Inbound_Number VARCHAR(255),
-    Prospect_Number VARCHAR(255)
-);
-
-CREATE TABLE public.staging_call (
-    Call_ID VARCHAR PRIMARY KEY,
-    Broker_Name VARCHAR,
-    Lead_ID VARCHAR,
-    Call_Type VARCHAR(255),
-    Date_Time VARCHAR(255),
-    Talk_Time VARCHAR(255),
+    Call_Duration_Original VARCHAR(255),
     Outcome VARCHAR(255),
     Call_Segment VARCHAR(255),
     Inbound_Number VARCHAR(255),
@@ -160,9 +162,22 @@ CREATE TABLE public.staging_Lead_Log (
 CREATE TABLE public.Broker (
     Broker_ID VARCHAR PRIMARY KEY,
     Broker_Name VARCHAR(255),
+    Broker_Name_Original VARCHAR(255),
     phoneNumber VARCHAR(255),
     email VARCHAR(255),
     extension VARCHAR(255),
     state VARCHAR(255),
     role VARCHAR(255)
+);
+
+CREATE TABLE public.Broker_Scores (
+    Broker_Score_ID VARCHAR PRIMARY KEY,
+    Broker_ID VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
+    Broker_Name VARCHAR(255),
+    Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
+    Criteria VARCHAR(255),
+    Timestamp TIMESTAMP,
+    Duration VARCHAR(255),
+    Score INT,
+    Reason VARCHAR(255)
 );

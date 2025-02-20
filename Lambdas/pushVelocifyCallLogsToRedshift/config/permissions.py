@@ -5,4 +5,5 @@
 -AmazonS3FullAccess
 -SecretsManagerReadWrite
 -AmazonSESFullAccess
+-AWSLambdaVPCAccessExecutionRole
 
