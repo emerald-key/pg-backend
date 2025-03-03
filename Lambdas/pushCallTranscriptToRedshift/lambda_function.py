@@ -62,12 +62,12 @@ def lambda_handler(event, context):
                 'body': 'Data processed successfully.'
             }
 
-        except Exception as e:
-            logger.info(f"Error: {str(e)}")
-            return {
-                'statusCode': 500,
-                'body': f"Failed to process data: {str(e)}"
-            }
+    except Exception as e:
+        logger.info(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': f"Failed to process data: {str(e)}"
+        }
 
 def read_json_from_s3(bucket_name, file_key):
     """
