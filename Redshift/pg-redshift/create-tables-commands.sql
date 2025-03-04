@@ -218,7 +218,7 @@ CREATE TABLE public.Broker_Adherence (
 
 CREATE TABLE public.leads_summary (
     lead_summary_id VARCHAR PRIMARY KEY,
-    lead_id VARCHAR REFERENCES public.Lead(Lead_ID) NULL,
+    lead_id INT REFERENCES public.Lead(Lead_ID) NULL,
     lead_name VARCHAR,
     status VARCHAR(255),
     lead_score_by_broker VARCHAR(255),
@@ -227,9 +227,10 @@ CREATE TABLE public.leads_summary (
     lead_type_reason VARCHAR(65535)
 );
 
+
 CREATE TABLE public.leads_details (
-    lead_Intrinsic_id VARCHAR PRIMARY KEY,
-    lead_id VARCHAR REFERENCES public.Lead(Lead_ID) NULL,
+    lead_details_id VARCHAR PRIMARY KEY,
+    lead_id INT REFERENCES public.Lead(Lead_ID) NULL,
     call_id VARCHAR REFERENCES public.Call(Call_ID) NULL,
     timestamp TIMESTAMP NOT NULL,
     lead_name VARCHAR,
@@ -239,4 +240,3 @@ CREATE TABLE public.leads_details (
     reason VARCHAR(65535),
     summary VARCHAR(65535)
 );
-
