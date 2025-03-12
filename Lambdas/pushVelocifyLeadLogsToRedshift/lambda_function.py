@@ -10,6 +10,11 @@ import re
 import logging
 from datetime import datetime
 import re
+import csv
+import sys
+
+csv.field_size_limit(sys.maxsize)
+
 
 # Configure logger
 logger = logging.getLogger()
@@ -84,9 +89,16 @@ def normalize_date_format(date_str):
         return None  # Return None if parsing fails
 
 def lambda_handler(event, context):
+    # logger.info(normalize_date_format("01-03-2023  07:54:42"))  # Expected output: "01-03-2023 07:54:42"
+    # logger.info(normalize_date_format("2/27/2024 9:56:28 AM"))  # Expected output: "02-27-2024 09:56:28"
+    # logger.info(normalize_date_format("2024-01-13 14:58:32"))
+    # logger.info(normalize_date_format("1/14/25 18:41"))  
+    # return
     try:
+        # bucket_name = "raw-velocify-leadlogs"
+        object_key = "AI_test_20250311_0831324a1b_Feb1toMarch102025.csv"
         bucket_name = os.environ.get('bucket_name')
-        object_key = event['Records'][0]['s3']['object']['key']
+        # object_key = event['Records'][0]['s3']['object']['key']
         # Skip processing if the file is in the "processed/" folder
         if object_key.startswith('processed/'):
             logger.info(f"Skipping file: {object_key}")
@@ -109,10 +121,6 @@ def lambda_handler(event, context):
             "Last Contact Attempt Date": "Last_Contact_Attempt_Date",
         }
         table_name = 'public.staging_Lead_Log'
-        truncate_table_query = f"TRUNCATE TABLE {table_name};"
-        logger.info("Starting table truncation...-1")
-        execute_redshift_query(truncate_table_query)  # Waits for completion
-        logger.info("Table truncated successfully.-1")
         # Download the CSV file
         response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
         csv_content = response['Body'].read().decode('utf-8')
@@ -213,6 +221,8 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
     
     try:
         copy_query = f"""
+        BEGIN;
+        TRUNCATE TABLE {table_name};
         COPY {table_name} ({', '.join(column_list)})
         FROM '{s3_path}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
@@ -220,7 +230,9 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         DELIMITER ','
         TIMEFORMAT 'auto'
         TRUNCATECOLUMNS;
+        COMMIT;
         """
+
         execute_redshift_query(copy_query)
         logger.info(f"Data copied successfully to Redshift.")
 
@@ -278,6 +290,8 @@ def remove_duplicates_and_insert_to_lead_log(table_name):
 
         # Step 1: Insert unique records into lead_log table
         insert_query = f"""
+        BEGIN;
+        -- Insert data from staging_lead_log into lead_log
         INSERT INTO public.lead_log (
             Lead_Log_Id, Log_Type, Log_Actor, Log_Date, Log_Result, Log_Note, Log_Contact, Lead_ID, Campaign_Name, Affiliate_Name, Status, Last_Contact_Attempt_Date
         )
@@ -305,20 +319,21 @@ def remove_duplicates_and_insert_to_lead_log(table_name):
             SELECT 1 FROM public.lead_log 
             WHERE public.lead_log.Lead_Log_Id = public.staging_lead_log.Lead_Log_Id
         );
+        -- Truncate the staging_lead_log table after insertion
+        TRUNCATE TABLE public.staging_lead_log;
+
+        COMMIT;
         """
         execute_redshift_query(insert_query)
         logger.info("Unique records inserted into lead_log.")
         time.sleep(10)
-        truncate_table_query_end = f"TRUNCATE TABLE {table_name};"
-        logger.info("Starting table truncation...-2")
-        execute_redshift_query(truncate_table_query_end)  # Waits for completion
-        logger.info("Table truncated successfully.-2")
 
     except Exception as e:
         logger.info(f"Error removing duplicates and inserting into lead_log: {e}")
         raise
 
 def execute_redshift_query(query_str):
+    print(query_str)
     """
     Execute a query in the Redshift cluster and wait for its completion.
     """
@@ -331,7 +346,7 @@ def execute_redshift_query(query_str):
             ClusterIdentifier=cluster_id
         )
         statement_id = response['Id']
-        logger.info(f"Query submitted successfully. Statement ID: {statement_id}")
+        # logger.info(f"Query submitted successfully. Statement ID: {statement_id}")
 
         # Wait for the query to complete
         while True:
@@ -339,7 +354,7 @@ def execute_redshift_query(query_str):
             status = query_status['Status']
             if status in ['FINISHED', 'FAILED', 'ABORTED']:
                 break
-            logger.info(f"Waiting for query to complete... Current status: {status}")
+            # logger.info(f"Waiting for query to complete... Current status: {status}")
         
         if status == 'FINISHED':
             logger.info("Query executed successfully.")
