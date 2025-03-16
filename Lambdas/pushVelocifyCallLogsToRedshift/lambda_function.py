@@ -6,6 +6,7 @@ import csv
 from botocore.client import Config
 import time
 import logging
+import uuid
 
 # Configure logger
 logger = logging.getLogger()
@@ -60,7 +61,7 @@ def convert_to_seconds(time_str, call_id):
         print(f"Error converting time for Call_ID: {call_id}, Time String: {time_str}")
         return None  # Return None if conversion fails
 
-def preprocess_csv(bucket_name, file_key, output_key, column_mapping):
+def preprocess_csv_old(bucket_name, file_key, output_key, column_mapping):
     """
     Preprocess CSV: Rename columns based on `column_mapping` and filter unwanted columns.
     Keeps the original 'Call Duration (hrs:min:sec)' column and converts 'Talk_Time' to seconds.
@@ -114,8 +115,69 @@ def preprocess_csv(bucket_name, file_key, output_key, column_mapping):
         raise
 
 
+def preprocess_csv(bucket_name, file_key, output_key, column_mapping):
+    """
+    Preprocess CSV: Rename columns based on `column_mapping` and filter unwanted columns.
+    Keeps the original 'Call Duration (hrs:min:sec)' column and converts 'Talk_Time' to seconds.
+
+    :param bucket_name: S3 bucket containing the input file.
+    :param file_key: Key of the input CSV file in the bucket.
+    :param output_key: Key for the processed CSV file in S3.
+    :param column_mapping: Dict mapping CSV column names to Redshift table column names.
+    """
+    try:
+        # Get the CSV file from S3
+        response = s3_client.get_object(Bucket=bucket_name, Key=file_key)
+        file_content = response['Body'].read().decode('utf-8')
+        csv_file = io.StringIO(file_content)
+
+        # Read and process the CSV
+        csv_reader = csv.DictReader(csv_file)
+        processed_rows = []
+
+        # Dictionary to store UUIDs for each Velocify_Recording_URL
+        uuid_map = {}
+
+        for row in csv_reader:
+            processed_row = {new_col: row[old_col] for old_col, new_col in column_mapping.items() if old_col in row}
+            
+            # Keep original call duration and convert Talk_Time
+            if 'Call Duration (hrs:min:sec)' in row:
+                processed_row['Call_Duration_Original'] = row['Call Duration (hrs:min:sec)']
+                processed_row['Talk_Time'] = convert_to_seconds(row['Call Duration (hrs:min:sec)'], row['Call Id'])
+
+            # Convert Lead_ID to integer if valid
+            lead_id = row.get('Lead Id', '').strip()
+            if lead_id.isdigit():
+                processed_row['Lead_ID'] = int(lead_id)
+
+            # ✅ Handle velocify_uuid based on Velocify_Recording_URL
+            recording_url = row.get('Recording', '').strip()
+            if recording_url:
+                if recording_url not in uuid_map:
+                    uuid_map[recording_url] = str(uuid.uuid4())  # Generate new UUID
+                processed_row['Velocify_UUID'] = uuid_map[recording_url]
+
+            processed_rows.append(processed_row)
+
+        # Write the processed CSV to a new S3 key
+        output_csv = io.StringIO()
+        fieldnames = list(column_mapping.values()) + ['Talk_Time', 'Call_Duration_Original', 'Lead_ID', 'Velocify_UUID']
+        csv_writer = csv.DictWriter(output_csv, fieldnames=fieldnames)
+        csv_writer.writeheader()
+        csv_writer.writerows(processed_rows)
+        output_csv.seek(0)
+
+        # Upload to S3
+        s3_client.put_object(Bucket=bucket_name, Key=output_key, Body=output_csv.getvalue())
+        logger.info(f"Processed CSV uploaded to {output_key} in {bucket_name}")
+
+    except Exception as e:
+        logger.error(f"Error preprocessing CSV: {e}")
+        raise
+
 def copy_data_to_redshift(s3_path, table_name, main_column_list):
-    column_list = main_column_list + ['Talk_Time','Call_Duration_Original','Lead_ID']
+    column_list = main_column_list + ['Talk_Time','Call_Duration_Original','Lead_ID','Velocify_UUID']
     """
     COPY data from S3 to Redshift.
     :param s3_path: S3 path of the processed CSV.
@@ -130,16 +192,20 @@ def copy_data_to_redshift(s3_path, table_name, main_column_list):
     try:
     
         copy_query = f"""
+        BEGIN;
+        TRUNCATE TABLE {table_name};
         COPY {table_name} ({', '.join(column_list)})
         FROM '{s3_path}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
         CSV IGNOREHEADER 1;
+        COMMIT;
         """
         execute_redshift_query(copy_query)
         # Get row count before insert
         before_count = get_table_row_count()
         logger.info(f"Row count before insert: {before_count}")
         insert_query = f"""
+        BEGIN;
         -- Step 1: Insert missing leads into the lead table
         INSERT INTO public.lead (Lead_ID)
         SELECT DISTINCT staging_call.Lead_ID 
@@ -153,7 +219,7 @@ def copy_data_to_redshift(s3_path, table_name, main_column_list):
 
         -- Step 2: Insert calls into the call table
         INSERT INTO public.call (
-            Call_ID, Lead_ID, Broker_Name, Outcome, Call_Segment, Call_Type, Date_Time, Talk_Time,Call_Duration_Original, Prospect_Number, Inbound_Number
+            Call_ID, Lead_ID, Broker_Name, Outcome, Call_Segment, Call_Type, Date_Time, Talk_Time,Call_Duration_Original, Prospect_Number, Inbound_Number,Velocify_Recording_URL,Velocify_UUID
         )
         SELECT DISTINCT
             Call_ID,
@@ -169,27 +235,20 @@ def copy_data_to_redshift(s3_path, table_name, main_column_list):
             Talk_Time,
             Call_Duration_Original,
             Prospect_Number,
-            Inbound_Number
+            Inbound_Number,
+            Velocify_Recording_URL,
+            Velocify_UUID
         FROM public.staging_call
         WHERE NOT EXISTS (
             SELECT 1 FROM public.call WHERE public.call.Call_ID = public.staging_call.Call_ID
         );
+        TRUNCATE TABLE {table_name};
+
+        COMMIT;
         """
         execute_redshift_query(insert_query)
         logger.info("Data copied successfully to Redshift.")
 
-        truncate_table_query_end = f"TRUNCATE TABLE {table_name};"
-        logger.info("Starting table truncation...-2")
-        execute_redshift_query(truncate_table_query_end)  # Waits for completion
-        logger.info("Table truncated successfully.-2")
-        # Get the number of rows copied using PG_LAST_COPY_COUNT
-        # count_query = "SELECT PG_LAST_COPY_COUNT();"
-        # response = execute_redshift_query(count_query)
-        # logger.info(f"countqueryresponse:{response}")
-        # copied_rows = int(response['Records'][0][0]['longValue'])
-        # logger.info(f"Rows copied to Redshift: {copied_rows}")
-         # Get row count after insert
-        # return copied_rows
         after_count = get_table_row_count()
         logger.info(f"Row count after insert: {after_count}")
         # Calculate inserted rows
@@ -243,12 +302,12 @@ def lambda_handler(event, context):
     """
     # event = {
     #     'bucket_name': 'raw-velocify-calllogs',
-    #     'file_key': 'Lm32481_CallHistory_080708_8fa9149e-9c0d-4d65-8e14-f82534cec7cc_Jan24to262025.csv',
+    #     'file_key': 'Lm32481_CallHistory_20250308_092555_972755e8-172a-4a42-967f-e6f1a6fedffa_Mar72025.csv',
     # }
-    # event = {
-    #     'bucket_name': 'raw-velocify-calllogs',
-    #     'file_key': 'testCallLogs.csv',
-    # }
+    event = {
+        'bucket_name': 'raw-velocify-calllogs',
+        'file_key': 'testcalls.csv',
+    }
     
     # Input and output details
     bucket_name = event['bucket_name']
@@ -265,7 +324,8 @@ def lambda_handler(event, context):
         'Origin':'Call_Type',
         'Time':'Date_Time',
         'Prospect Number':'Prospect_Number',
-        'Inbound Number':'Inbound_Number'
+        'Inbound Number':'Inbound_Number',
+        'Recording': 'Velocify_Recording_URL'
     }
     # Skip processing if the file is in the "processed/" folder
     if input_file_key.startswith('processed/'):
@@ -275,14 +335,10 @@ def lambda_handler(event, context):
             'body': f"Skipped processing for file: {input_file_key}"
         }
     try:
-        # Step 1: Truncate the staging table
-        truncate_table_query = f"TRUNCATE TABLE {table_name};"
-        logger.info("Starting table truncation...-1")
-        execute_redshift_query(truncate_table_query)  # Waits for completion
-        logger.info("Table truncated successfully.-1")
 
         # Step 2: Preprocess the CSV
         preprocess_csv(bucket_name, input_file_key, output_file_key, column_mapping)
+        return
 
         # Step 3: Construct S3 path for the processed CSV
         s3_path = f"s3://{bucket_name}/{output_file_key}"
@@ -308,7 +364,7 @@ def lambda_handler(event, context):
 
         return {
             'statusCode': 200,
-            'body': 'CSV processed and data loaded into Redshift successfully.'
+            'body': f'CSV {input_file_key} processed and data loaded into Redshift successfully.'
         }
     except Exception as e:
         logger.info(f"Error in lambda_handler: {e}")

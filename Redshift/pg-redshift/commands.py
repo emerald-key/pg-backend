@@ -163,3 +163,20 @@ SELECT COUNT(*) from public.lead_log;
 --find higest log date-------------
 SELECT MAX(Log_Date) AS highest_log_date
 FROM public.Lead_Log;
+
+--Query to update velocify_uuid in calls table"
+UPDATE public.call
+SET Velocify_UUID = sub.Generated_UUID
+FROM (
+    SELECT 
+        Call_ID,
+        Velocify_Recording_URL,
+        CASE 
+            WHEN Velocify_Recording_URL IS NOT NULL THEN 
+                MD5(Velocify_Recording_URL)::VARCHAR 
+            ELSE 
+                MD5(random()::text || GETDATE()::text)::VARCHAR
+        END AS Generated_UUID
+    FROM public.call
+) AS sub
+WHERE public.call.Call_ID = sub.Call_ID;

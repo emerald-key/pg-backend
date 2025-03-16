@@ -20,16 +20,23 @@ def lambda_handler(event, context):
     target_bucket_name = os.environ.get('target_bucket_name')
     source_bucket_name = os.environ.get('source_bucket_name')
     lambda_status = event.get("lambdaStatus", "s3Triggered")
+    # lambda_status = "s3Triggered"
     logger.info(f"lambda_status: {lambda_status}")
+
     if lambda_status == "invokedSelf":
         logger.info("Invoking self")
         file_key = event.get("file_key")
         start_index = event.get("start_index")
+        # Convert processed recordings back to a set
+        processed_recordings = set(event.get("processed_recordings", []))
     else:
         logger.info("Triggered from s3")
         file_key  = event['Records'][0]['s3']['object']['key']
+        # file_key  = "testcalls.csv"
+        start_index = 0
+        processed_recordings = set()
         # Invoke redshift lambda
-        invoke_redshift_lambda(file_key,source_bucket_name)
+        # invoke_redshift_lambda(file_key, source_bucket_name)
     
     # Skip processing if the file is in the "processed/" folder
     if file_key.startswith('processed/'):
@@ -38,16 +45,14 @@ def lambda_handler(event, context):
             'statusCode': 200,
             'body': f"Skipped processing for file: {file_key}"
         }
-    # file_key = os.environ.get('file_key')
 
     # Start tracking time
     start_time = time.time()
     lambda_timeout_buffer = 840  # 14 minutes buffer
 
-    # Get the start index from the event or default to 0
-    start_index = event.get("start_index", 0)
     logger.info(f"startIndex: {start_index}")
     logger.info(f"fileKey: {file_key}")
+    
     try:
         # Get the CSV file from S3
         response = s3_client.get_object(Bucket=source_bucket_name, Key=file_key)
@@ -62,7 +67,7 @@ def lambda_handler(event, context):
             elapsed_time = time.time() - start_time
             if elapsed_time >= lambda_timeout_buffer:
                 logger.info(f"Timeout approaching. Reinvoking Lambda at row {index}")
-                invoke_self(context, file_key, index)
+                invoke_self(context, file_key, index, processed_recordings)
                 logger.info(f"Reinvoked Lambda at row {index}")
                 return {
                     'statusCode': 202,
@@ -72,19 +77,28 @@ def lambda_handler(event, context):
             # Process the row
             recording_url = row.get("Recording")
             if recording_url and recording_url.startswith("http"):
+                if recording_url in processed_recordings:
+                    logger.info(f"Skipping duplicate recording:{row.get("Call Id", "unknown")} - {recording_url}")
+                    continue
+                
                 # Download the recording file
                 recording_response = requests.get(recording_url)
                 if recording_response.status_code == 200:
                     call_id = row.get("Call Id", "unknown")
                     target_file_key = f"{call_id}.mp3"
+                    
                     # Save the recording to the target S3 bucket
                     s3_client.put_object(
                         Bucket=target_bucket_name,
                         Key=target_file_key,
                         Body=recording_response.content
                     )
+                    
+                    # Add to the processed set to prevent future downloads
+                    processed_recordings.add(recording_url)
                 else:
                     logger.info(f"Failed to download recording: {recording_url}, Status Code: {recording_response.status_code}")
+        
         logger.info("Recordings processed and saved successfully")
         return {
             'statusCode': 200,
@@ -92,13 +106,13 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        logger.info(f"Error: {str(e)}")
+        logger.error(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'body': f"Failed to process file: {str(e)}"
         }
 
-def invoke_self(context, file_key, start_index):
+def invoke_self(context, file_key, start_index, processed_recordings):
     """Reinvoke the same Lambda function."""
     lambda_client.invoke(
         FunctionName=context.function_name,
@@ -106,12 +120,13 @@ def invoke_self(context, file_key, start_index):
         Payload=json.dumps({
             "file_key": file_key,
             "start_index": start_index,
-            "lambdaStatus":"invokedSelf"
+            "lambdaStatus": "invokedSelf",
+            # Convert set to list for JSON compatibility
+            "processed_recordings": list(processed_recordings)
         })
     )
 
-
-def invoke_redshift_lambda(file_key,bucket_name):
+def invoke_redshift_lambda(file_key, bucket_name):
     """Invoke the redshift Lambda function."""
     lambda_client.invoke(
         FunctionName="pushVelocifyCallLogsToRedshift",

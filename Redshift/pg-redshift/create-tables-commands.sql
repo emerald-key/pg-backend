@@ -9,7 +9,9 @@ CREATE TABLE public.staging_call (
     Outcome VARCHAR(255),
     Call_Segment VARCHAR(255),
     Inbound_Number VARCHAR(255),
-    Prospect_Number VARCHAR(255)
+    Prospect_Number VARCHAR(255),
+    Velocify_Recording_URL VARCHAR(65535),
+    Velocify_UUID VARCHAR(255)
 );
 
 CREATE TABLE public.call (
@@ -23,7 +25,9 @@ CREATE TABLE public.call (
     Outcome VARCHAR(255),
     Call_Segment VARCHAR(255),
     Inbound_Number VARCHAR(255),
-    Prospect_Number VARCHAR(255)
+    Prospect_Number VARCHAR(255),
+    Velocify_Recording_URL VARCHAR(65535),
+    Velocify_UUID VARCHAR(255)
 );
 
 CREATE TABLE public.Lead (

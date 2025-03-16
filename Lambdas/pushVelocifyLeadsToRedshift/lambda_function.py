@@ -156,6 +156,7 @@ def lambda_handler(event, context):
     # }
     bucket_name = os.environ.get('bucket_name')
     input_file_key = event['Records'][0]['s3']['object']['key']
+    # input_file_key = "AI_full_download_20250308_0942114de3_Feb14toMarch72025.csv"
     output_file_key = f"processed/{input_file_key}"
     table_name = 'public.staging_lead'
     column_mapping = {
@@ -213,27 +214,21 @@ def lambda_handler(event, context):
             'body': f"Skipped processing for file: {input_file_key}"
         }
     try:
-        # Step 1: Truncate the staging table
-        truncate_table_query = f"TRUNCATE TABLE {table_name};"
-        logger.info("Starting table truncation...-1")
-        execute_redshift_query(truncate_table_query)  # Waits for completion
-        logger.info("Table truncated successfully.-1")
-
-        # Step 2: Preprocess the CSV
+        # Step 1: Preprocess the CSV
         preprocess_csv(bucket_name, input_file_key, output_file_key, column_mapping)
 
-        # Step 3: Construct S3 path for the processed CSV
+        # Step 2: Construct S3 path for the processed CSV
         s3_path = f"s3://{bucket_name}/{output_file_key}"
         column_list = list(column_mapping.values())
-        # Step 4: Load data into Redshift
+        # Step 3: Load data into Redshift
         copied_rows = copy_data_to_redshift(s3_path, table_name, column_list)
 
-         # Step 5: Count rows in the CSV file (excluding header)
+         # Step 4: Count rows in the CSV file (excluding header)
         response = s3_client.get_object(Bucket=bucket_name, Key=input_file_key)
         csv_lines = response['Body'].read().decode('utf-8').splitlines()
         csv_row_count = len(csv_lines) - 1  # Exclude header
         if(copied_rows < csv_row_count):
-            # Step 6: Send SES email
+            # Step 5: Send SES email
             subject = "Leads : Redshift Data Load Completed"
             body = f"""
             Bucket Name: {bucket_name}
@@ -276,10 +271,13 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
     try:
     
         copy_query = f"""
+        BEGIN;
+        TRUNCATE TABLE {table_name};
         COPY {table_name} ({', '.join(column_list)})
         FROM '{s3_path}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
-        CSV IGNOREHEADER 1;
+        CSV IGNOREHEADER 1
+        COMMIT;
         """
         logger.info(f'copy_query:{copy_query}')
         execute_redshift_query(copy_query)
@@ -389,104 +387,102 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         execute_redshift_query(update_query)
 
         insert_query = f"""
-       INSERT INTO public.Lead (
-            Lead_ID, Source, Lead_Status, Lead_Score, Milestone, Broker_Name, "Group", 
-            Date_Added, Last_Action, First_Contact_Attempt_Date, Action_Count, Total_Contact_Attempts, 
-            Last_Action_Date, First_Assignment_Distribution_Date, First_Assignment_Distribution_User, 
-            Lead_Source_Group, Creative, Broker, Opener, IRA_Investment_Dollar, Cash_Investment_Dollar, 
-            Deal_Type, Transfer_Type, "TO_Date", SF_Lead_ID, Velocify_ID, Original_Broker, SF_Lead_Owner, 
-            Junior_Broker, Last_Activity, Intellect_Client_ID, Intellect_Broker, First_Name, Last_Name, 
-            Home_Phone, Work_Phone, Mobile_Phone, Email, Secondary_Email, Address, City, State, 
-            Zip_Postal_Code, Source_Code, SubID
-        )
-        SELECT DISTINCT
-            NULLIF(staging.Lead_ID, '')::INT AS Lead_ID,
-            staging.Source,
-            staging.Lead_Status,
-            staging.Lead_Score,
-            staging.Milestone,
-            staging.Broker_Name,
-            staging."Group",
-            CASE 
-                WHEN NULLIF(staging.Date_Added, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
-                THEN NULLIF(staging.Date_Added, '')::TIMESTAMP
-                ELSE NULL 
-            END AS Date_Added,
-            staging.Last_Action,
-            CASE 
-                WHEN NULLIF(staging.First_Contact_Attempt_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
-                THEN NULLIF(staging.First_Contact_Attempt_Date, '')::TIMESTAMP
-                ELSE NULL 
-            END AS First_Contact_Attempt_Date,
-            NULLIF(staging.Action_Count, '')::INT AS Action_Count,
-            NULLIF(staging.Total_Contact_Attempts, '')::INT AS Total_Contact_Attempts,
-            CASE 
-                WHEN NULLIF(staging.Last_Action_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
-                THEN NULLIF(staging.Last_Action_Date, '')::TIMESTAMP
-                ELSE NULL 
-            END AS Last_Action_Date,
-            CASE 
-                WHEN NULLIF(staging.First_Assignment_Distribution_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
-                THEN NULLIF(staging.First_Assignment_Distribution_Date, '')::TIMESTAMP
-                ELSE NULL 
-            END AS First_Assignment_Distribution_Date,
-            staging.First_Assignment_Distribution_User,
-            staging.Lead_Source_Group,
-            staging.Creative,
-            staging.Broker,
-            staging.Opener,
-            staging.IRA_Investment_Dollar,
-            staging.Cash_Investment_Dollar,
-            staging.Deal_Type,
-            staging.Transfer_Type,
-            CASE 
-                WHEN NULLIF(staging."TO_Date", '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
-                THEN NULLIF(staging."TO_Date", '')::TIMESTAMP
-                ELSE NULL 
-            END AS "TO_Date",
-            staging.SF_Lead_ID,
-            staging.Velocify_ID,
-            staging.Original_Broker,
-            staging.SF_Lead_Owner,
-            staging.Junior_Broker,
-            CASE 
-                WHEN NULLIF(staging.Last_Activity, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
-                THEN NULLIF(staging.Last_Activity, '')::TIMESTAMP
-                ELSE NULL 
-            END AS Last_Activity,
-            staging.Intellect_Client_ID,
-            staging.Intellect_Broker,
-            staging.First_Name,
-            staging.Last_Name,
-            staging.Home_Phone,
-            staging.Work_Phone,
-            staging.Mobile_Phone,
-            staging.Email,
-            staging.Secondary_Email,
-            staging.Address,
-            staging.City,
-            staging.State,
-            staging.Zip_Postal_Code,
-            staging.Source_Code,
-            staging.SubID
-        FROM public.staging_lead AS staging
-        WHERE NULLIF(staging.Lead_ID, '')::INT IS NOT NULL
-        AND NOT EXISTS (
-            SELECT 1 
-            FROM public.Lead 
-            WHERE public.Lead.Lead_ID = NULLIF(staging.Lead_ID, '')::INT
-        );
+        BEGIN;
+        INSERT INTO public.Lead (
+                Lead_ID, Source, Lead_Status, Lead_Score, Milestone, Broker_Name, "Group", 
+                Date_Added, Last_Action, First_Contact_Attempt_Date, Action_Count, Total_Contact_Attempts, 
+                Last_Action_Date, First_Assignment_Distribution_Date, First_Assignment_Distribution_User, 
+                Lead_Source_Group, Creative, Broker, Opener, IRA_Investment_Dollar, Cash_Investment_Dollar, 
+                Deal_Type, Transfer_Type, "TO_Date", SF_Lead_ID, Velocify_ID, Original_Broker, SF_Lead_Owner, 
+                Junior_Broker, Last_Activity, Intellect_Client_ID, Intellect_Broker, First_Name, Last_Name, 
+                Home_Phone, Work_Phone, Mobile_Phone, Email, Secondary_Email, Address, City, State, 
+                Zip_Postal_Code, Source_Code, SubID
+            )
+            SELECT DISTINCT
+                NULLIF(staging.Lead_ID, '')::INT AS Lead_ID,
+                staging.Source,
+                staging.Lead_Status,
+                staging.Lead_Score,
+                staging.Milestone,
+                staging.Broker_Name,
+                staging."Group",
+                CASE 
+                    WHEN NULLIF(staging.Date_Added, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.Date_Added, '')::TIMESTAMP
+                    ELSE NULL 
+                END AS Date_Added,
+                staging.Last_Action,
+                CASE 
+                    WHEN NULLIF(staging.First_Contact_Attempt_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.First_Contact_Attempt_Date, '')::TIMESTAMP
+                    ELSE NULL 
+                END AS First_Contact_Attempt_Date,
+                NULLIF(staging.Action_Count, '')::INT AS Action_Count,
+                NULLIF(staging.Total_Contact_Attempts, '')::INT AS Total_Contact_Attempts,
+                CASE 
+                    WHEN NULLIF(staging.Last_Action_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.Last_Action_Date, '')::TIMESTAMP
+                    ELSE NULL 
+                END AS Last_Action_Date,
+                CASE 
+                    WHEN NULLIF(staging.First_Assignment_Distribution_Date, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.First_Assignment_Distribution_Date, '')::TIMESTAMP
+                    ELSE NULL 
+                END AS First_Assignment_Distribution_Date,
+                staging.First_Assignment_Distribution_User,
+                staging.Lead_Source_Group,
+                staging.Creative,
+                staging.Broker,
+                staging.Opener,
+                staging.IRA_Investment_Dollar,
+                staging.Cash_Investment_Dollar,
+                staging.Deal_Type,
+                staging.Transfer_Type,
+                CASE 
+                    WHEN NULLIF(staging."TO_Date", '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging."TO_Date", '')::TIMESTAMP
+                    ELSE NULL 
+                END AS "TO_Date",
+                staging.SF_Lead_ID,
+                staging.Velocify_ID,
+                staging.Original_Broker,
+                staging.SF_Lead_Owner,
+                staging.Junior_Broker,
+                CASE 
+                    WHEN NULLIF(staging.Last_Activity, '') ~ '^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$' 
+                    THEN NULLIF(staging.Last_Activity, '')::TIMESTAMP
+                    ELSE NULL 
+                END AS Last_Activity,
+                staging.Intellect_Client_ID,
+                staging.Intellect_Broker,
+                staging.First_Name,
+                staging.Last_Name,
+                staging.Home_Phone,
+                staging.Work_Phone,
+                staging.Mobile_Phone,
+                staging.Email,
+                staging.Secondary_Email,
+                staging.Address,
+                staging.City,
+                staging.State,
+                staging.Zip_Postal_Code,
+                staging.Source_Code,
+                staging.SubID
+            FROM public.staging_lead AS staging
+            WHERE NULLIF(staging.Lead_ID, '')::INT IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1 
+                FROM public.Lead 
+                WHERE public.Lead.Lead_ID = NULLIF(staging.Lead_ID, '')::INT
+            )
+        TRUNCATE TABLE {table_name};
 
+        COMMIT;
 
         """
         # logger.info(f"InsertQuery: {insert_query}")
         execute_redshift_query(insert_query)
         logger.info("Data copied successfully to Redshift.")
-
-        truncate_table_query_end = f"TRUNCATE TABLE {table_name};"
-        logger.info("Starting table truncation...-2")
-        execute_redshift_query(truncate_table_query_end)  # Waits for completion
-        logger.info("Table truncated successfully.-2")
         after_count = get_table_row_count()
         logger.info(f"Row count after insert: {after_count}")
         # Calculate inserted rows
