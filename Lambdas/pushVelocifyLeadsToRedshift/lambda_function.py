@@ -276,7 +276,7 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
         COPY {table_name} ({', '.join(column_list)})
         FROM '{s3_path}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
-        CSV IGNOREHEADER 1
+        CSV IGNOREHEADER 1;
         COMMIT;
         """
         logger.info(f'copy_query:{copy_query}')
@@ -474,7 +474,7 @@ def copy_data_to_redshift(s3_path, table_name, column_list):
                 SELECT 1 
                 FROM public.Lead 
                 WHERE public.Lead.Lead_ID = NULLIF(staging.Lead_ID, '')::INT
-            )
+            );
         TRUNCATE TABLE {table_name};
 
         COMMIT;
