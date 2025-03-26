@@ -4,4 +4,4 @@
 -AmazonRedshiftQueryEditor
 -AmazonS3FullAccess
 -SecretsManagerReadWrite
-
+-AWSLambdaVPCAccessExecutionRole

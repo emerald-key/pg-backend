@@ -89,7 +89,7 @@ def execute_redshift_query(query_str):
     print(f"Executing query: {query_str}")
     try:
         result = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id

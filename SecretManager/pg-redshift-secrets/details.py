@@ -1,20 +1,20 @@
 Encryptionkey=aws/secretsmanager
-SecretName=pg-redshift-secret
+SecretName=pg-redshift-secrets
 KeyValues:
     key-username
     value-pgawsuser
 
     key-password
-    value-pgawsuser
+    value-passwordtest
 
     key-engine
     value-redshift
 
     key-host
-    value-pg-redshift-cluster.cangtoce16mw.us-east-1.redshift.amazonaws.com
+    value-pg-redshift.cangtoce16mw.us-east-1.redshift.amazonaws.com
 
     key-port
     value-5439
 
     key-dbClusterIdentifier
-    value-pg-redshift-cluster
+    value-pg-redshift

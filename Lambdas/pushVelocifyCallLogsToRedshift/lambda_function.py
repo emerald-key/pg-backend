@@ -1,154 +1,182 @@
-import os
-import json
 import boto3
-import botocore
-import io
 import csv
+import io
+import requests
 import time
-from datetime import datetime
-from botocore.client import Config
+import json
+import os
+import logging
+import re
 
-# Initialize S3 client and Secrets Manager client
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
+
+# Initialize S3 client and Lambda client
 s3_client = boto3.client('s3')
 lambda_client = boto3.client('lambda')
-secret_name = os.environ['SecretId']
-session = boto3.session.Session()
-region = session.region_name
-
-# Secrets Manager client
-client_secretsmanager = session.client(service_name='secretsmanager', region_name=region)
-get_secret_value_response = client_secretsmanager.get_secret_value(SecretId=secret_name)
-secret_arn = get_secret_value_response['ARN']
-secret_json = json.loads(get_secret_value_response['SecretString'])
-cluster_id = secret_json['dbClusterIdentifier']
-
-# Redshift client
-config = Config(connect_timeout=5, read_timeout=5)
-client_redshift = session.client("redshift-data", config=config)
 
 def lambda_handler(event, context):
-    print(f"Entered lambda_handler: {event}")
-    file_key = event['file_key']
-    bucket_name = event['bucket_name']
-    start_index = event.get('start_index', 0)
-    lambda_timeout_buffer = 840  # 14 minutes buffer
+    logger.info(event)
+    
+    target_bucket_name = os.environ.get('target_bucket_name')
+    source_bucket_name = os.environ.get('source_bucket_name')
+    lambda_status = event.get("lambdaStatus", "s3Triggered")
+
+    logger.info(f"lambda_status: {lambda_status}")
+
+    if lambda_status == "invokedSelf":
+        logger.info("Invoked from self")
+        file_key = event.get("file_key")
+        start_index = event.get("start_index")
+    else:
+        logger.info("Triggered from S3")
+        file_key = event['Records'][0]['s3']['object']['key']
+        start_index = 0
+
+        # Skip processing if already processed
+        if file_key.startswith('processed/') or file_key.startswith('cleaned/'):
+            logger.info(f"Skipping file: {file_key}")
+            return {
+                'statusCode': 200,
+                'body': f"Skipped processing for file: {file_key}"
+            }
+        # Invoke redshift lambda
+        invoke_redshift_lambda(file_key, source_bucket_name)
+        # Preprocess and create cleaned file
+        file_key = preprocess_csv(file_key, source_bucket_name)
+        if not file_key:
+            return {
+                'statusCode': 500,
+                'body': 'Failed to preprocess CSV file'
+            }
+
+    logger.info(f"Processing file: {file_key}")
+
+    # Start tracking time
+    start_time = time.time()
+    # lambda_timeout_buffer = 840  # 14 minutes buffer
+    lambda_timeout_buffer = 10  # 14 minutes buffer
 
     try:
-        # Get the CSV file from S3
-        response = s3_client.get_object(Bucket=bucket_name, Key=file_key)
+        # Get the cleaned CSV file from S3
+        response = s3_client.get_object(Bucket=source_bucket_name, Key=file_key)
         file_content = response['Body'].read().decode('utf-8')
+
+        # Use io.StringIO to treat the string content as a file
         csv_file = io.StringIO(file_content)
         csv_reader = list(csv.DictReader(csv_file))  # Read all rows into a list
-
-        start_time = time.time()
-
+        
         for index, row in enumerate(csv_reader[start_index:], start=start_index):
+            # Check remaining time
             elapsed_time = time.time() - start_time
             if elapsed_time >= lambda_timeout_buffer:
-                print(f"Timeout approaching. Reinvoking Lambda at row {index}")
-                invoke_self(context, file_key, bucket_name, index)
-                print(f"Reinvoked Lambda at row {index}")
+                logger.info(f"Timeout approaching. Reinvoking Lambda at row {index}")
+                invoke_self(context, file_key, index)
                 return {
                     'statusCode': 202,
                     'body': f'Reinvoked Lambda at row {index}'
                 }
 
-            # Handle missing or optional fields
-            call_id = row.get('Call Id') or 'NULL'
-            lead_id = row.get('Lead Id') or 'NULL'
-            origin = row.get('Origin') or 'NULL'
-            time_field = row.get('Time') or 'NULL'
-            call_duration = row.get('Call Duration (hrs:min:sec)', '0:00:00')
-            talk_time = duration_to_seconds(call_duration) or 'NULL'
-
-            # Wrap strings in single quotes, use NULL for missing values
-            time_field = f"'{time_field}'" if time_field != 'NULL' else time_field
-            call_id = f"'{call_id}'" if call_id != 'NULL' else call_id
-            origin = f"'{origin}'" if origin != 'NULL' else origin
-
-            try:
-                # Construct SQL queries to delete and insert
-                delete_sql_query = f"""
-                DELETE FROM public.Call WHERE Call_ID = {call_id};
-                """
-                insert_sql_query = f"""
-                INSERT INTO public.Call (Call_ID, Call_Platform, Lead_ID, Call_Type, Date_Time, Talk_Time, Broker_ID)
-                VALUES ({call_id}, 'Velocify', {lead_id}, {origin}, {time_field}, {talk_time}, 'c74f794c-c969-475a-9be4-d12d438a95d9');
-                """
-                lead_check_insert_query = f"""
-                INSERT INTO public.Lead (Lead_ID, Source, Lead_Status, Lead_Score, Creation_Date)
-                SELECT {lead_id}, 'Velocify', NULL, NULL, {time_field}
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM public.Lead WHERE Lead_ID = {lead_id}
-                );
-                """
-
-                # Execute delete query first
-                execute_redshift_query(delete_sql_query)
-
-                # Execute insert query
-                execute_redshift_query(insert_sql_query)
-
-                # Execute check and insert query
-                execute_redshift_query(lead_check_insert_query)
-
-            except Exception as row_error:
-                print(f"Error processing row {row}: {str(row_error)}")
-
-        print("CSV processing completed successfully")
+            # Process the row
+            recording_url = row.get("Recording")
+            if recording_url and recording_url.startswith("http"):
+                call_id = row.get("Call Id", "unknown")
+                target_file_key = f"{call_id}.mp3"
+                
+                # Download and store the recording in S3
+                recording_response = requests.get(recording_url)
+                if recording_response.status_code == 200:
+                    s3_client.put_object(
+                        Bucket=target_bucket_name,
+                        Key=target_file_key,
+                        Body=recording_response.content
+                    )
+                else:
+                    logger.info(f"Failed to download recording: {recording_url}, Status Code: {recording_response.status_code}")
+        
+        logger.info(f"Recordings processed and saved successfully")
         return {
             'statusCode': 200,
-            'body': 'Call logs processed successfully!'
+            'body': 'Recordings processed and saved successfully!'
         }
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'body': f"Failed to process file: {str(e)}"
         }
 
-def execute_redshift_query(query_str):
-    """
-    Execute a query in the Redshift cluster.
-    """
-    print(f"Executing query: {query_str}")
+def preprocess_csv(file_key, source_bucket):
+    """Preprocess CSV by removing duplicates and saving a cleaned version."""
     try:
-        result = client_redshift.execute_statement(
-            Database='dev',
-            SecretArn=secret_arn,
-            Sql=query_str,
-            ClusterIdentifier=cluster_id
+        logger.info(f"Preprocessing CSV: {file_key}")
+
+        # Get the CSV file from S3
+        response = s3_client.get_object(Bucket=source_bucket, Key=file_key)
+        file_content = response['Body'].read().decode('utf-8')
+
+        # Read CSV into a list of dictionaries
+        csv_file = io.StringIO(file_content)
+        csv_reader = list(csv.DictReader(csv_file))
+
+        # Remove duplicates based on Recording URL
+        seen_recordings = set()
+        cleaned_rows = []
+        for row in csv_reader:
+            recording_url = row.get("Recording")
+            if recording_url and recording_url not in seen_recordings:
+                seen_recordings.add(recording_url)
+                cleaned_rows.append(row)
+
+        logger.info(f"Removed {len(csv_reader) - len(cleaned_rows)} duplicate rows")
+
+        # Save cleaned CSV back to S3
+        cleaned_file_key = f"cleaned/{file_key}"
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=csv_reader[0].keys())
+        writer.writeheader()
+        writer.writerows(cleaned_rows)
+
+        s3_client.put_object(
+            Bucket=source_bucket,
+            Key=cleaned_file_key,
+            Body=output.getvalue()
         )
-        print(f"Query executed successfully: {result}")
-        return result
+
+        logger.info(f"Cleaned file saved to {cleaned_file_key}")
+
+        return cleaned_file_key
 
     except Exception as e:
-        print(f"Error executing query: {str(e)}")
-        raise
-
-def duration_to_seconds(duration_str):
-    """
-    Convert a duration string in the format hrs:min:sec to seconds.
-    """
-    try:
-        h, m, s = map(int, duration_str.split(":"))
-        total_seconds = h * 3600 + m * 60 + s
-        return total_seconds
-    except ValueError:
-        print(f"Invalid duration format: {duration_str}")
+        logger.error(f"Failed to preprocess CSV: {e}")
         return None
 
-def invoke_self(context, file_key, bucket_name, start_index):
-    """
-    Reinvoke the same Lambda function with updated start_index.
-    """
+def invoke_self(context, file_key, start_index):
+    """Reinvoke the same Lambda function."""
+    try:
+        lambda_client.invoke(
+            FunctionName=context.function_name,
+            InvocationType='Event',
+            Payload=json.dumps({
+                "file_key": file_key,
+                "start_index": start_index,
+                "lambdaStatus": "invokedSelf"
+            })
+        )
+        logger.info(f"Reinvoked Lambda at row {start_index}")
+
+    except Exception as e:
+        logger.error(f"Failed to reinvoke Lambda: {e}")
+
+def invoke_redshift_lambda(file_key, bucket_name):
+    """Invoke the Redshift Lambda function."""
     lambda_client.invoke(
-        FunctionName=context.function_name,
-        InvocationType='Event',  # Asynchronous invocation
+        FunctionName="pushVelocifyCallLogsToRedshift",
+        InvocationType='Event',  # Async invocation
         Payload=json.dumps({
             "file_key": file_key,
-            "bucket_name": bucket_name,
-            "start_index": start_index
+            "bucket_name": bucket_name
         })
     )

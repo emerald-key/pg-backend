@@ -7,6 +7,11 @@ from botocore.client import Config
 import time
 import io
 import uuid
+import logging
+
+# Configure logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO) 
 
 
 s3_client = boto3.client('s3')
@@ -36,46 +41,58 @@ config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config = config)
 
 def lambda_handler(event, context):
-    print(f"Entered lambda_handler: {event}")
+    logger.info(f"Entered lambda_handler: {event}")
     brokers = brokers_list()
     try:
-        for broker in brokers :
-            try:
-                # Handle optional fields and substitute NULL where necessary
-                broker_id = uuid.uuid4()
-                broker_name = broker.get('name') or 'NULL'
-                phoneNumber = broker.get('phoneNumber') or 'NULL'
-                extension = broker.get('extension') or 'NULL'
-                email = broker.get('email') or 'NULL'
-                role = broker.get('role') or 'NULL'
-                state = broker.get('state') or 'NULL'
-                broker_tenure = broker.get('broker_tenure') or 'NULL'
+        for broker in brokers:
+          try:
+            # Handle optional fields and substitute NULL where necessary
+            broker_id = uuid.uuid4()
+            broker_name_original = broker.get('name') or 'NULL'
+            phoneNumber = broker.get('phoneNumber') or 'NULL'
+            extension = broker.get('extension') or 'NULL'
+            email = broker.get('email') or 'NULL'
+            role = broker.get('role') or 'NULL'
+            state = broker.get('state') or 'NULL'
+            broker_tenure = broker.get('broker_tenure') or 'NULL'
 
-                # If the fields are strings, wrap them in single quotes, otherwise use raw values
-                broker_id = f"'{broker_id}'" if broker_id != 'NULL' else broker_id
-                broker_name = f"'{broker_name}'" if broker_name != 'NULL' else broker_name
-                phoneNumber = f"'{phoneNumber}'" if phoneNumber != 'NULL' else phoneNumber
-                email = f"'{email}'" if email != 'NULL' else email
-                role = f"'{role}'" if role != 'NULL' else role
-                state = f"'{state}'" if state != 'NULL' else state
-                extension = f"'{extension}'" if extension != 'NULL' else extension
-                # broker_tenure = f"'{broker_tenure}'" if broker_tenure != 'NULL' else broker_tenure
-                delete_sql_query = f"""
-                DELETE FROM public.Broker WHERE broker_name = {broker_name};
-                """
-                # Construct the SQL query
-                insert_sql_query = f"""
-                INSERT INTO public.Broker (broker_id, broker_name,phoneNumber,email,extension,state,role)
-                VALUES ({broker_id}, {broker_name},{phoneNumber},{email},{extension},{state},{role});
-                """
-                # Execute delete query first
-                execute_redshift_query(delete_sql_query)
-                
-                # Execute insert query
-                execute_redshift_query(insert_sql_query)
+            # Reverse the broker name (first name, last name -> last name, first name)
+            if broker_name_original != 'NULL':
+                name_parts = broker_name_original.split()
+                if len(name_parts) == 2:  # Ensure it's a first and last name
+                    broker_name = f"{name_parts[1]}, {name_parts[0]}"
+                else:
+                    broker_name = broker_name_original  # In case of unexpected format (e.g., middle names)
+            else:
+                broker_name = 'NULL'
+
+            # If the fields are strings, wrap them in single quotes, otherwise use raw values
+            broker_id = f"'{broker_id}'" if broker_id != 'NULL' else broker_id
+            broker_name_original = f"'{broker_name_original}'" if broker_name_original != 'NULL' else broker_name_original
+            broker_name = f"'{broker_name}'" if broker_name != 'NULL' else broker_name
+            phoneNumber = f"'{phoneNumber}'" if phoneNumber != 'NULL' else phoneNumber
+            email = f"'{email}'" if email != 'NULL' else email
+            role = f"'{role}'" if role != 'NULL' else role
+            state = f"'{state}'" if state != 'NULL' else state
+            extension = f"'{extension}'" if extension != 'NULL' else extension
+
+            delete_sql_query = f"""
+            DELETE FROM public.Broker WHERE broker_name = {broker_name};
+            """
+            # Construct the SQL query with reversed_name
+            insert_sql_query = f"""
+            INSERT INTO public.Broker (broker_id, broker_name_original, broker_name, phoneNumber, email, extension, state, role)
+            VALUES ({broker_id}, {broker_name_original}, {broker_name}, {phoneNumber}, {email}, {extension}, {state}, {role});
+            """
+            # Execute delete query first
+            execute_redshift_query(delete_sql_query)
             
-            except Exception as broker_error:
-                print(f"Error processing broker {broker}: {str(broker_error)}")
+            # Execute insert query
+            execute_redshift_query(insert_sql_query)
+
+          except Exception as broker_error:
+              logger.info(f"Error processing broker {broker}: {str(broker_error)}")
+
         
         return {
             'statusCode': 200,
@@ -83,7 +100,7 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.info(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'body': f"Failed to process file: {str(e)}"
@@ -93,10 +110,10 @@ def execute_redshift_query(query_str):
     """
     Insert a record into the Redshift table.
     """
-    print(f"Executing query: {query_str}")
+    logger.info(f"Executing query: {query_str}")
     try:
         result = client_redshift.execute_statement(
-            Database='dev',
+            Database=os.environ.get('database_name'),
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id
@@ -104,7 +121,7 @@ def execute_redshift_query(query_str):
         return result
 
     except Exception as e:
-        print(f"Error executing query: {str(e)}")
+        logger.info(f"Error executing query: {str(e)}")
         raise
 
 
