@@ -231,16 +231,30 @@ CREATE TABLE public.leads_summary (
     lead_type_reason VARCHAR(65535)
 );
 
-
 CREATE TABLE public.leads_details (
-    lead_details_id VARCHAR PRIMARY KEY,
+   lead_details_id VARCHAR PRIMARY KEY,
     lead_id INT REFERENCES public.Lead(Lead_ID) NULL,
     call_id VARCHAR REFERENCES public.Call(Call_ID) NULL,
     timestamp TIMESTAMP NOT NULL,
     lead_name VARCHAR,
     duration VARCHAR,
     criteria VARCHAR(255),
-    Score DECIMAL(5, 2),
+    score VARCHAR(65535),
     reason VARCHAR(65535),
     summary VARCHAR(65535)
+);
+CREATE TABLE public.broker_dashboard (
+    broker_summary_id VARCHAR PRIMARY KEY,
+    call_id                 VARCHAR(50),
+    timestamp               TIMESTAMP,
+    broker_name             VARCHAR(100),
+    role                    VARCHAR(100),
+    talk_time               INTEGER,
+    positives               VARCHAR(65535),
+    opportunities           VARCHAR(65535),
+    summary                 VARCHAR(65535),
+    type                    VARCHAR(50),  -- 'intrinsics' or 'adherence'
+    criteria                VARCHAR(65535),
+    score                   DECIMAL(5, 2),
+    reason                  VARCHAR(65535)
 );
