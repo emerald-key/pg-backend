@@ -191,20 +191,25 @@ CREATE TABLE public.Broker_Scores (
 CREATE TABLE public.Broker_Summary (
     Broker_Summary_ID VARCHAR PRIMARY KEY,
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
-    Timestamp TIMESTAMP NOT NULL,
-    Role VARCHAR,
-    Broker_Name VARCHAR(255),
-    Talk_Time INT,
+    Broker_ID VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
+    Broker_Name VARCHAR(65535),
+    Role VARCHAR(65535),
+    Timestamp VARCHAR(65535),
+    Duration VARCHAR(65535),
+    Broker_Talktime VARCHAR(255),
+    Customer_Talktime VARCHAR(255),
     Positives VARCHAR(65535),
     Opportunities VARCHAR(65535),
-    Summary VARCHAR(65535)
+    Broker_Overarching_Summary VARCHAR(65535)
 );
 
 CREATE TABLE public.Broker_Intrinsics (
     Broker_Intrinsics_ID VARCHAR PRIMARY KEY,
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
     Role VARCHAR(50),
+    Broker_ID VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
     Broker_Name VARCHAR(255),
+    Timestamp TIMESTAMP NOT NULL,
     Criteria VARCHAR(255),
     Score DECIMAL(5, 2),
     Reason VARCHAR(65535)
@@ -214,34 +219,49 @@ CREATE TABLE public.Broker_Adherence (
     Broker_Adherence_ID VARCHAR PRIMARY KEY,
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
     Role VARCHAR(50),
+    Timestamp TIMESTAMP NOT NULL,
+    Broker_ID VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
     Broker_Name VARCHAR(255),
     Criteria VARCHAR(255),
     Score DECIMAL(5, 2),
-    Reason VARCHAR(65535)
+    Reason VARCHAR(65535),
+    Summary VARCHAR(65535)
 );
 
-CREATE TABLE public.leads_summary (
-    lead_summary_id VARCHAR PRIMARY KEY,
+CREATE TABLE public.lead_summary (
+    Lead_Summary_ID VARCHAR PRIMARY KEY,
+    Lead_ID INT REFERENCES public.Lead(Lead_ID) NULL,
+    Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
+    Timestamp VARCHAR(65535),
+    Lead_Name VARCHAR,
+    Status VARCHAR(255),
+    Lead_Score_By_Broker VARCHAR(255),
+    Total_Contact_Attempts INT,
+    Lead_Affiliate_Level_Category VARCHAR(255),
+    Audio_Call_Type VARCHAR(255),
+    Audio_Call_Type_Reason VARCHAR(255),
+    Lead_Type VARCHAR(255),
+    Lead_Type_Reason VARCHAR(65535),
+    Lead_Intrinsic_Avg VARCHAR(255),
+    Concern_Type VARCHAR(255),
+    Concern_Type_Reason VARCHAR(65535),
+    Dollar_Amount VARCHAR(255),
+    Account_Type VARCHAR(255),
+    Lead_Qualification VARCHAR(255),
+    Lead_Qualification_Reason VARCHAR(65535),
+    Summary VARCHAR(65535)
+);
+
+CREATE TABLE public.lead_details (
+    lead_details_id VARCHAR PRIMARY KEY,
     lead_id INT REFERENCES public.Lead(Lead_ID) NULL,
     lead_name VARCHAR,
-    status VARCHAR(255),
-    lead_score_by_broker VARCHAR(255),
-    total_contact_attempts INT,
-    lead_type VARCHAR(255),
-    lead_type_reason VARCHAR(65535)
-);
-
-CREATE TABLE public.leads_details (
-   lead_details_id VARCHAR PRIMARY KEY,
-    lead_id INT REFERENCES public.Lead(Lead_ID) NULL,
     call_id VARCHAR REFERENCES public.Call(Call_ID) NULL,
     timestamp TIMESTAMP NOT NULL,
-    lead_name VARCHAR,
-    duration VARCHAR,
+    duration VARCHAR(255),
     criteria VARCHAR(255),
     score VARCHAR(65535),
-    reason VARCHAR(65535),
-    summary VARCHAR(65535)
+    reason VARCHAR(65535)
 );
 CREATE TABLE public.broker_dashboard (
     broker_summary_id VARCHAR PRIMARY KEY,
