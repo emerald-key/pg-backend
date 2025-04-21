@@ -36,7 +36,7 @@ def lambda_handler(event, context):
         run_dashboard_refresh()
         return {
             'statusCode': 200,
-            'body': json.dumps('Broker dashboard updated successfully!')
+            'body': json.dumps('Lead dashboard updated successfully!')
         }
     except Exception as e:
         logger.error(str(e))
@@ -80,7 +80,7 @@ def upload_to_s3_as_csv(column_names, data):
     current_date = datetime.utcnow().strftime("%Y-%m-%d")
 
     # Construct the S3 key dynamically
-    key = f"dashboard/broker/{current_date}.csv"    
+    key = f"dashboard/lead/{current_date}.csv"    
     csv_buffer = io.StringIO()
     writer = csv.writer(csv_buffer)
     writer.writerow(column_names)
@@ -149,55 +149,51 @@ def execute_redshift_query(query_str):
 
 def run_dashboard_refresh():
     query = """
-    WITH broker_details AS (
+    WITH lead_details_union AS (
     SELECT
-        bi.call_id,
-        bi.broker_id,
-        bi.broker_name,
-        bi.role,
-        bi.timestamp,
-        'intrinsics' AS type,
-        bi.criteria,
-        bi.score,
-        bi.reason
-    FROM public.broker_intrinsics bi
-
-    UNION ALL
-
-    SELECT
-        ba.call_id,
-        ba.broker_id,
-        ba.broker_name,
-        ba.role,
-        ba.timestamp,
-        'adherence' AS type,
-        ba.criteria,
-        ba.score,
-        ba.reason
-    FROM public.broker_adherence ba
+        ld.lead_id,
+        ld.lead_details_id,
+        ld.lead_name,
+        ld.call_id,
+        ld.timestamp AS details_timestamp,
+        ld.duration,
+        ld.criteria,
+        ld.score,
+        ld.reason
+    FROM public.lead_details ld
     )
 
     SELECT
-        bs.broker_summary_id,
-        bs.call_id,
-        bs.timestamp,
-        bs.broker_id,
-        bs.broker_name,
-        bs.role,
-        bs.duration,
-        bs.broker_talktime,
-        bs.customer_talktime,
-        bs.positives,
-        bs.opportunities,
-        bs.broker_overarching_summary,
-        bd.type,
-        bd.criteria,
-        bd.score,
-        bd.reason
-    FROM public.broker_summary bs
-    LEFT JOIN broker_details bd 
-        ON bs.call_id = bd.call_id 
-        AND bs.broker_id = bd.broker_id
+        ls.lead_summary_id,
+        ls.lead_id,
+        ls.call_id,
+        ls.timestamp,
+        ls.lead_name,
+        ls.status,
+        ls.lead_score_by_broker,
+        ls.total_contact_attempts,
+        ls.lead_affiliate_level_category,
+        ls.audio_call_type,
+        ls.audio_call_type_reason,
+        ls.lead_type,
+        ls.lead_type_reason,
+        ls.lead_intrinsic_avg,
+        ls.concern_type,
+        ls.concern_type_reason,
+        ls.dollar_amount,
+        ls.account_type,
+        ls.lead_qualification,
+        ls.lead_qualification_reason,
+        ls.summary,
+        ld.lead_details_id,
+        ld.details_timestamp,
+        ld.duration,
+        ld.criteria,
+        ld.score,
+        ld.reason
+    FROM public.lead_summary ls
+    LEFT JOIN lead_details_union ld 
+        ON ls.lead_id = ld.lead_id;
 
     """
 
@@ -225,4 +221,4 @@ def run_dashboard_refresh():
     logger.info("Query finished. Fetching results...")
     columns, rows = fetch_query_results(statement_id)
     s3_key = upload_to_s3_as_csv(columns, rows)
-    truncate_and_copy_to_redshift("broker_dashboard", s3_key)
+    truncate_and_copy_to_redshift("lead_dashboard", s3_key)

@@ -260,21 +260,54 @@ CREATE TABLE public.lead_details (
     timestamp TIMESTAMP NOT NULL,
     duration VARCHAR(255),
     criteria VARCHAR(255),
-    score VARCHAR(65535),
+    Score DECIMAL(5,2),
     reason VARCHAR(65535)
 );
 CREATE TABLE public.broker_dashboard (
-    broker_summary_id VARCHAR PRIMARY KEY,
+    broker_summary_id       VARCHAR PRIMARY KEY,
     call_id                 VARCHAR(50),
     timestamp               TIMESTAMP,
+    broker_id VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
     broker_name             VARCHAR(100),
     role                    VARCHAR(100),
-    talk_time               INTEGER,
+    duration                VARCHAR(255),
+    broker_talktime         INT,
+    customer_talktime       INT,
     positives               VARCHAR(65535),
     opportunities           VARCHAR(65535),
-    summary                 VARCHAR(65535),
-    type                    VARCHAR(50),  -- 'intrinsics' or 'adherence'
+    broker_overarching_summary   VARCHAR(65535),
+    type                    VARCHAR(50),         -- 'intrinsics' or 'adherence'
     criteria                VARCHAR(65535),
-    score                   DECIMAL(5, 2),
+    score                   DECIMAL(5,2),
     reason                  VARCHAR(65535)
+);
+
+CREATE TABLE public.lead_dashboard (
+    Lead_Summary_ID VARCHAR PRIMARY KEY,
+    Lead_ID INT,
+    Call_ID VARCHAR,
+    Timestamp VARCHAR(65535),
+    Lead_Name VARCHAR,
+    Status VARCHAR(255),
+    Lead_Score_By_Broker VARCHAR(255),
+    Total_Contact_Attempts INT,
+    Lead_Affiliate_Level_Category VARCHAR(255),
+    Audio_Call_Type VARCHAR(255),
+    Audio_Call_Type_Reason VARCHAR(255),
+    Lead_Type VARCHAR(255),
+    Lead_Type_Reason VARCHAR(65535),
+    Lead_Intrinsic_Avg VARCHAR(255),
+    Concern_Type VARCHAR(255),
+    Concern_Type_Reason VARCHAR(65535),
+    Dollar_Amount VARCHAR(255),
+    Account_Type VARCHAR(255),
+    Lead_Qualification VARCHAR(255),
+    Lead_Qualification_Reason VARCHAR(65535),
+    Summary VARCHAR(65535),
+    Lead_Details_ID VARCHAR,
+    Details_Timestamp TIMESTAMP,
+    Duration VARCHAR(255),
+    Criteria VARCHAR(255),
+    Score DECIMAL(5,2),
+    Reason VARCHAR(65535)
 );
