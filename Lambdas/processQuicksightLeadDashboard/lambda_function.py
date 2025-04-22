@@ -157,6 +157,7 @@ def run_dashboard_refresh():
         ld.call_id,
         ld.timestamp AS details_timestamp,
         ld.duration,
+        ld.durationInSecs,
         ld.criteria,
         ld.score,
         ld.reason
@@ -188,6 +189,7 @@ def run_dashboard_refresh():
         ld.lead_details_id,
         ld.details_timestamp,
         ld.duration,
+        ld.durationInSecs,
         ld.criteria,
         ld.score,
         ld.reason
