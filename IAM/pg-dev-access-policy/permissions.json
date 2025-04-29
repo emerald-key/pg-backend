@@ -8,7 +8,20 @@
                 "lambda:*",
                 "ec2:*",
                 "sagemaker:*",
-                "redshift:*"
+                "sagemaker-geospatial:*",
+                "redshift:*",
+                "secretsmanager:*",
+                "glue:*",
+                "elasticmapreduce:*",
+                "logs:*",
+                "redshift-data:*",
+                "redshift-serverless:*",
+                "sns:*",
+                "cloudwatch:*",
+                "tag:*",
+                "kms:*",
+                "sqlworkbench:*",
+                "scheduler:*"
             ],
             "Resource": "*"
         }

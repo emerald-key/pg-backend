@@ -180,3 +180,8 @@ FROM (
     FROM public.call
 ) AS sub
 WHERE public.call.Call_ID = sub.Call_ID;
+
+--query to load errors 
+SELECT *
+FROM stl_load_errors
+ORDER BY starttime DESC;

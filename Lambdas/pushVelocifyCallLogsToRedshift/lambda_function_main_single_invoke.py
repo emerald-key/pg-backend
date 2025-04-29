@@ -20,7 +20,7 @@ get_secret_value_response = client_secretsmanager.get_secret_value(SecretId=secr
 secret_arn = get_secret_value_response['ARN']
 secret_json = json.loads(get_secret_value_response['SecretString'])
 cluster_id = secret_json['dbClusterIdentifier']
-
+database_name = secret_json['dbName']
 # Redshift client
 config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config=config)
@@ -89,7 +89,7 @@ def execute_redshift_query(query_str):
     print(f"Executing query: {query_str}")
     try:
         result = client_redshift.execute_statement(
-            Database=os.environ.get('database_name'),
+            Database=database_name,
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id

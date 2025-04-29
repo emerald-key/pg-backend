@@ -33,7 +33,7 @@ secret_arn = get_secret_value_response['ARN']
 secret_json = json.loads(get_secret_value_response['SecretString'])
 
 cluster_id = secret_json['dbClusterIdentifier']
-
+database_name = secret_json['dbName']
 # Redshift client
 config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config=config)
@@ -253,7 +253,7 @@ def get_table_row_count():
         # Execute the query
         query = "SELECT COUNT(*) FROM public.lead_log;"
         response = client_redshift.execute_statement(
-            Database=os.environ.get('database_name'),
+            Database=database_name,
             SecretArn=secret_arn,
             Sql=query,
             ClusterIdentifier=cluster_id
@@ -340,7 +340,7 @@ def execute_redshift_query(query_str):
     try:
         # Execute the query
         response = client_redshift.execute_statement(
-            Database=os.environ.get('database_name'),
+            Database=database_name,
             SecretArn=secret_arn,
             Sql=query_str,
             ClusterIdentifier=cluster_id
