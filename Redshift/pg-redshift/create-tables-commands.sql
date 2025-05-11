@@ -200,7 +200,9 @@ CREATE TABLE public.Broker_Summary (
     Customer_Talktime VARCHAR(255),
     Positives VARCHAR(65535),
     Opportunities VARCHAR(65535),
-    Broker_Overarching_Summary VARCHAR(65535)
+    Broker_Overarching_Summary VARCHAR(65535),
+    Created_Datetime TIMESTAMP,
+    Velocify_UUID VARCHAR(255)
 );
 
 CREATE TABLE public.Broker_Intrinsics (
@@ -212,7 +214,9 @@ CREATE TABLE public.Broker_Intrinsics (
     Timestamp TIMESTAMP NOT NULL,
     Criteria VARCHAR(255),
     Score DECIMAL(5, 2),
-    Reason VARCHAR(65535)
+    Reason VARCHAR(65535),
+    Created_Datetime TIMESTAMP,
+    Velocify_UUID VARCHAR(255)
 );
 
 CREATE TABLE public.Broker_Adherence (
@@ -225,7 +229,9 @@ CREATE TABLE public.Broker_Adherence (
     Criteria VARCHAR(255),
     Score DECIMAL(5, 2),
     Reason VARCHAR(65535),
-    Summary VARCHAR(65535)
+    Summary VARCHAR(65535),
+    Created_Datetime TIMESTAMP,
+    Velocify_UUID VARCHAR(255)
 );
 CREATE TABLE public.lead_summary (
     Lead_Summary_ID VARCHAR PRIMARY KEY,
@@ -248,7 +254,9 @@ CREATE TABLE public.lead_summary (
     Account_Type VARCHAR(65535),
     Lead_Qualification VARCHAR(65535),
     Lead_Qualification_Reason VARCHAR(65535),
-    Summary VARCHAR(65535)
+    Summary VARCHAR(65535),
+    Created_Datetime TIMESTAMP,
+    Velocify_UUID VARCHAR(255)
 );
 
 CREATE TABLE public.lead_details (
@@ -261,7 +269,9 @@ CREATE TABLE public.lead_details (
     durationInSecs INT,
     criteria VARCHAR(255),
     Score DECIMAL(5,2),
-    reason VARCHAR(65535)
+    reason VARCHAR(65535),
+    Created_Datetime TIMESTAMP,
+    Velocify_UUID VARCHAR(255)
 );
 CREATE TABLE public.broker_dashboard (
     broker_summary_id       VARCHAR PRIMARY KEY,
@@ -311,4 +321,10 @@ CREATE TABLE public.lead_dashboard (
     Criteria VARCHAR(255),
     Score DECIMAL(5,2),
     Reason VARCHAR(65535)
+);
+CREATE TABLE public.sales (
+    Lead_ID         INT PRIMARY KEY,
+    Date           VARCHAR(255),
+    Amount         VARCHAR(255),
+    GrossSaleAmount VARCHAR(255)  
 );
