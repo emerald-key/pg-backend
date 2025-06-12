@@ -91,7 +91,7 @@ def execute_redshift_query(query_str):
             Sql=query_str,
             ClusterIdentifier=cluster_id
         )
-        logger.info(f"Query:{query_str}")
+        # logger.info(f"Query:{query_str}")
         logger.info(f"Query executed successfully: {result}")
         return result
     except Exception as e:
@@ -156,7 +156,7 @@ def lambda_handler(event, context):
     # }
     bucket_name = os.environ.get('bucket_name')
     input_file_key = event['Records'][0]['s3']['object']['key']
-    # input_file_key = "AI_full_download_20250308_0942114de3_Feb14toMarch72025.csv"
+    # input_file_key = "AI_full_download_20250525_110339f651_March27-May172025.csv"
     output_file_key = f"processed/{input_file_key}"
     table_name = 'public.staging_lead'
     column_mapping = {
@@ -579,4 +579,3 @@ def send_email(subject, body):
     except Exception as e:
         logger.info(f"Error sending email: {e}")
         raise
-

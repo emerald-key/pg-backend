@@ -5,6 +5,9 @@ CREDENTIALS 'key1=test;key2=test'
 JSON 's3://velocify-json-paths/transcription.json'
 REGION 'us-east-1';
 
+
+#command to avoid duplicates insertion
+
 BEGIN;
 
 -- Step 1: Create a temp table
@@ -30,6 +33,44 @@ WHERE main.transcript_id IS NULL;
 
 COMMIT;
 
+
+#copy jsons to redshift by date
+COPY public.Transcript (call_id, transcript_id, transcript_url)
+FROM 's3://raw-velocify-callrecording-transcriptions/03/17/2025/'
+CREDENTIALS 'aws_access_key_id=your_key;aws_secret_access_key=your_secret'
+JSON 's3://velocify-json-paths/transcription.json'
+REGION 'us-east-1';
+
+#copy jsons to redshift by date by handling duplicates for call_id 
+
+BEGIN;
+
+-- 1. Create temporary staging table
+CREATE TEMP TABLE transcript_stage (
+  call_id VARCHAR,
+  transcript_id VARCHAR,
+  transcript_url VARCHAR
+);
+
+-- 2. Load only from a specific S3 folder (e.g., 03/17/2025/)
+COPY transcript_stage (call_id, transcript_id, transcript_url)
+FROM 's3://raw-velocify-callrecording-transcriptions/03/17/2025/'
+CREDENTIALS 'aws_access_key_id=your_key;aws_secret_access_key=your_secret'
+JSON 's3://velocify-json-paths/transcription.json'
+REGION 'us-east-1';
+
+-- 3. Insert only new call_id records
+INSERT INTO public.Transcript (call_id, transcript_id, transcript_url)
+SELECT call_id, transcript_id, transcript_url
+FROM transcript_stage
+WHERE call_id NOT IN (
+    SELECT call_id FROM public.Transcript
+);
+
+-- 4. Cleanup
+DROP TABLE transcript_stage;
+
+COMMIT;
 
 
 
@@ -181,7 +222,44 @@ FROM (
 ) AS sub
 WHERE public.call.Call_ID = sub.Call_ID;
 
+
+COPY public.Lead_Summary (lead_summary_id,Created_Datetime,Velocify_UUID,lead_id,call_id,timestamp,lead_name,source,status, lead_score_by_broker,total_contact_attempts,lead_affiliate_level_category,
+    audio_call_type,audio_call_type_reason,lead_type, lead_type_reason, lead_intrinsic_avg, concern_type, concern_type_reason,
+    dollar_amount, account_type, lead_qualification,lead_qualification_reason,summary)
+    FROM 's3://llm-model-outputs/redshift-loads/missing_lead_summary/'
+    CREDENTIALS 'key1=test;key2=test'
+    CSV IGNOREHEADER 1;
+
 --query to load errors 
 SELECT *
 FROM stl_load_errors
 ORDER BY starttime DESC;
+
+
+
+
+UPDATE broker_adherence
+SET reason = 'inconclusive',score = 3
+WHERE reason = 'Parsing failed or response was not in valid JSON format.';
+
+UPDATE broker_adherence
+SET summary = 'inconclusive',score = 3
+WHERE summary = 'Parsing failed or response was not in valid JSON format.';
+
+
+UPDATE broker_intrinsics
+SET reason = 'inconclusive',score = 3
+WHERE reason = 'Parsing failed or response was not in valid JSON format.';
+
+UPDATE lead_summary
+SET summary = 'inconclusive'
+WHERE summary = 'Parsing failed or response was not in valid JSON format.';
+
+UPDATE lead_details
+SET reason = 'inconclusive',score = 3
+WHERE reason = 'Parsing failed or response was not in valid JSON format.';
+
+
+ALTER TABLE public.broker_dashboard
+ADD CONSTRAINT fk_call_lead
+FOREIGN KEY (Lead_ID) REFERENCES public.lead(Lead_ID);

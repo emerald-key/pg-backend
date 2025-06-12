@@ -48,29 +48,39 @@ def lambda_handler(event, context):
 
 def fetch_query_results(statement_id):
     """
-    Fetch results from an executed Redshift Data API statement.
-    Convert any NULL (NoneType) or unexpected boolean values to proper string values for CSV.
+    Fetch results from an executed Redshift Data API statement with pagination.
     """
-    result = client_redshift.get_statement_result(Id=statement_id)
-    column_names = [col['name'] for col in result['ColumnMetadata']]
-    rows = result['Records']
+    column_names = []
+    all_data = []
+    next_token = None
 
-    data = []
-    for row in rows:
-        row_data = []
-        for col in row:
-            val = list(col.values())[0] if col else None
+    while True:
+        if next_token:
+            result = client_redshift.get_statement_result(Id=statement_id, NextToken=next_token)
+        else:
+            result = client_redshift.get_statement_result(Id=statement_id)
 
-            # Convert boolean True (which Redshift returns for NULLs in some cases) to empty string
-            if isinstance(val, bool) and val is True:
-                row_data.append('')
-            elif val is None:
-                row_data.append('')
-            else:
-                row_data.append(val)
-        data.append(row_data)
+        if not column_names:
+            column_names = [col['name'] for col in result['ColumnMetadata']]
 
-    return column_names, data
+        for row in result['Records']:
+            row_data = []
+            for col in row:
+                val = list(col.values())[0] if col else None
+                if isinstance(val, bool) and val is True:
+                    row_data.append('')
+                elif val is None:
+                    row_data.append('')
+                else:
+                    row_data.append(val)
+            all_data.append(row_data)
+
+        next_token = result.get('NextToken')
+        if not next_token:
+            break
+
+    return column_names, all_data
+
 
 
 def upload_to_s3_as_csv(column_names, data):
@@ -102,15 +112,48 @@ def truncate_and_copy_to_redshift(table_name, s3_key):
     aws_credentials = json.loads(credentials_response['SecretString'])
     aws_access_key = aws_credentials['AWS_ACCESS_KEY_ID']
     aws_secret_access_key = aws_credentials['AWS_SECRET_ACCESS_KEY']
+    # copy_query = f"""
+    #     BEGIN;
+    #     TRUNCATE TABLE {table_name};
+    #     COPY {table_name}
+    #     FROM '{full_s3_path}'
+    #     CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
+    #     CSV IGNOREHEADER 1;
+    #     COMMIT;
+    # """
     copy_query = f"""
         BEGIN;
         TRUNCATE TABLE {table_name};
-        COPY {table_name}
+        COPY {table_name} (
+            broker_summary_id,
+            call_id,
+            lead_id,
+            timestamp,
+            broker_id,
+            broker_name,
+            role,
+            duration,
+            broker_talktime,
+            customer_talktime,
+            positives,
+            opportunities,
+            broker_overarching_summary,
+            created_datetime,
+            velocify_uuid,
+            type,
+            criteria,
+            score,
+            reason,
+            call_type,
+            outcome
+            
+        )
         FROM '{full_s3_path}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
         CSV IGNOREHEADER 1;
         COMMIT;
     """
+
     execute_redshift_query(copy_query)
 
 
@@ -150,37 +193,44 @@ def execute_redshift_query(query_str):
 
 def run_dashboard_refresh():
     query = """
-    WITH broker_details AS (
-    SELECT
-        bi.call_id,
-        bi.broker_id,
-        bi.broker_name,
-        bi.role,
-        bi.timestamp,
-        'intrinsics' AS type,
-        bi.criteria,
-        bi.score,
-        bi.reason
-    FROM public.broker_intrinsics bi
+        WITH broker_details AS (
+        SELECT
+            bi.call_id,
+            bi.lead_id,
+            bi.broker_id,
+            bi.broker_name,
+            bi.role,
+            bi.timestamp,
+            'intrinsics' AS type,
+            bi.criteria,
+            bi.score,
+            bi.reason,
+            bi.call_type,
+            bi.outcome
+        FROM public.broker_intrinsics bi
 
-    UNION ALL
+        UNION ALL
 
-    SELECT
-        ba.call_id,
-        ba.broker_id,
-        ba.broker_name,
-        ba.role,
-        ba.timestamp,
-        'adherence' AS type,
-        ba.criteria,
-        ba.score,
-        ba.reason
-    FROM public.broker_adherence ba
+        SELECT
+            ba.call_id,
+            ba.lead_id,
+            ba.broker_id,
+            ba.broker_name,
+            ba.role,
+            ba.timestamp,
+            'adherence' AS type,
+            ba.criteria,
+            ba.score,
+            ba.reason,
+            ba.call_type,
+            ba.outcome
+        FROM public.broker_adherence ba
     )
 
     SELECT
         bs.broker_summary_id,
         bs.call_id,
+        bs.lead_id,
         bs.timestamp,
         bs.broker_id,
         bs.broker_name,
@@ -191,14 +241,20 @@ def run_dashboard_refresh():
         bs.positives,
         bs.opportunities,
         bs.broker_overarching_summary,
+        bs.created_datetime,
+        bs.velocify_uuid,
         bd.type,
         bd.criteria,
         bd.score,
-        bd.reason
+        bd.reason,
+        bd.call_type,
+        bd.outcome
     FROM public.broker_summary bs
-    LEFT JOIN broker_details bd 
-        ON bs.call_id = bd.call_id 
-        AND bs.broker_id = bd.broker_id
+    JOIN broker_details bd 
+        ON bs.call_id = bd.call_id
+        AND TRIM(bs.broker_id) = TRIM(bd.broker_id)
+    ORDER BY bs.call_id, bd.type;
+
 
     """
 

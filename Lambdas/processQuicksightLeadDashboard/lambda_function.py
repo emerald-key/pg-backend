@@ -27,7 +27,6 @@ secret_arn = get_secret_value_response['ARN']
 secret_json = json.loads(get_secret_value_response['SecretString'])
 cluster_id = secret_json['dbClusterIdentifier']
 database_name = secret_json['dbName']
-
 # Redshift client
 config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config=config)
@@ -46,7 +45,16 @@ def lambda_handler(event, context):
             'body': json.dumps(f"Error: {str(e)}")
         }
 
-def fetch_query_results(statement_id):
+def sanitize_value(val):
+    """Sanitize the value for CSV output."""
+    if isinstance(val, str):
+        # Remove problematic characters or escape them
+        val = val.replace('"', '""')  # Escape double quotes
+        val = val.replace('{', '')      # Remove curly braces if needed
+        val = val.replace('}', '')      # Remove curly braces if needed
+    return val
+
+def fetch_query_results_old(statement_id):
     """
     Fetch results from an executed Redshift Data API statement.
     Convert any NULL (NoneType) or unexpected boolean values to proper string values for CSV.
@@ -67,12 +75,49 @@ def fetch_query_results(statement_id):
             elif val is None:
                 row_data.append('')
             else:
-                row_data.append(val)
+                row_data.append(sanitize_value(str(val)))  # Sanitize and ensure all values are strings
         data.append(row_data)
 
+    # Log the fetched results for debugging
+    logger.info(f"Fetched results: {data[:5]}")  # Log first 5 rows
     return column_names, data
 
 
+def fetch_query_results(statement_id):
+    """
+    Fetch results from an executed Redshift Data API statement with pagination.
+    """
+    column_names = []
+    all_data = []
+    next_token = None
+
+    while True:
+        if next_token:
+            result = client_redshift.get_statement_result(Id=statement_id, NextToken=next_token)
+        else:
+            result = client_redshift.get_statement_result(Id=statement_id)
+
+        if not column_names:
+            column_names = [col['name'] for col in result['ColumnMetadata']]
+
+        for row in result['Records']:
+            row_data = []
+            for col in row:
+                val = list(col.values())[0] if col else None
+                if isinstance(val, bool) and val is True:
+                    row_data.append('')
+                elif val is None:
+                    row_data.append('')
+                else:
+                    row_data.append(val)
+            all_data.append(row_data)
+
+        next_token = result.get('NextToken')
+        if not next_token:
+            break
+
+    return column_names, all_data
+    
 def upload_to_s3_as_csv(column_names, data):
     """
     Upload the query results to S3 as a CSV.
@@ -83,7 +128,7 @@ def upload_to_s3_as_csv(column_names, data):
     # Construct the S3 key dynamically
     key = f"dashboard/lead/{current_date}.csv"    
     csv_buffer = io.StringIO()
-    writer = csv.writer(csv_buffer)
+    writer = csv.writer(csv_buffer, quoting=csv.QUOTE_MINIMAL)  # Use quoting to handle special characters
     writer.writerow(column_names)
     writer.writerows(data)
 
@@ -105,12 +150,47 @@ def truncate_and_copy_to_redshift(table_name, s3_key):
     copy_query = f"""
         BEGIN;
         TRUNCATE TABLE {table_name};
-        COPY {table_name}
+        COPY {table_name} (
+            lead_summary_id,
+            lead_id,
+            call_id,
+            timestamp,
+            lead_name,
+            status,
+            lead_score_by_broker,
+            total_contact_attempts,
+            lead_affiliate_level_category,
+            audio_call_type,
+            audio_call_type_reason,
+            lead_type,
+            lead_type_reason,
+            lead_intrinsic_avg,
+            concern_type,
+            concern_type_reason,
+            dollar_amount,
+            account_type,
+            lead_qualification,
+            lead_qualification_reason,
+            summary,
+            created_datetime,
+            velocify_uuid,
+            source,
+            lead_details_id,
+            details_timestamp,
+            duration,
+            durationinsecs,
+            criteria,
+            score,
+            reason,
+            call_type,
+            outcome
+        )
         FROM '{full_s3_path}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
         CSV IGNOREHEADER 1;
         COMMIT;
     """
+
     execute_redshift_query(copy_query)
 
 
@@ -161,7 +241,9 @@ def run_dashboard_refresh():
         ld.durationInSecs,
         ld.criteria,
         ld.score,
-        ld.reason
+        ld.reason,
+        ld.call_type,
+        ld.outcome
     FROM public.lead_details ld
     )
 
@@ -187,13 +269,18 @@ def run_dashboard_refresh():
         ls.lead_qualification,
         ls.lead_qualification_reason,
         ls.summary,
+        ls.created_datetime,
+        ls.velocify_uuid,
+        ls.source,
         ld.lead_details_id,
         ld.details_timestamp,
         ld.duration,
         ld.durationInSecs,
         ld.criteria,
         ld.score,
-        ld.reason
+        ld.reason,
+        ld.call_type,
+        ld.outcome
     FROM public.lead_summary ls
     LEFT JOIN lead_details_union ld 
         ON ls.lead_id = ld.lead_id;

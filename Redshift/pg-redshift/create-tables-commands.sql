@@ -191,6 +191,7 @@ CREATE TABLE public.Broker_Scores (
 CREATE TABLE public.Broker_Summary (
     Broker_Summary_ID VARCHAR PRIMARY KEY,
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
+    Lead_ID INT REFERENCES public.Lead(Lead_ID) NULL,
     Broker_ID VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
     Broker_Name VARCHAR(65535),
     Role VARCHAR(65535),
@@ -202,12 +203,15 @@ CREATE TABLE public.Broker_Summary (
     Opportunities VARCHAR(65535),
     Broker_Overarching_Summary VARCHAR(65535),
     Created_Datetime TIMESTAMP,
-    Velocify_UUID VARCHAR(255)
+    Velocify_UUID VARCHAR(255),
+    Call_Type               VARCHAR(255),
+    Outcome                 VARCHAR(255)
 );
 
 CREATE TABLE public.Broker_Intrinsics (
     Broker_Intrinsics_ID VARCHAR PRIMARY KEY,
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
+    Lead_ID INT REFERENCES public.Lead(Lead_ID) NULL,
     Role VARCHAR(50),
     Broker_ID VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
     Broker_Name VARCHAR(255),
@@ -216,12 +220,15 @@ CREATE TABLE public.Broker_Intrinsics (
     Score DECIMAL(5, 2),
     Reason VARCHAR(65535),
     Created_Datetime TIMESTAMP,
-    Velocify_UUID VARCHAR(255)
+    Velocify_UUID VARCHAR(255),
+    Call_Type               VARCHAR(255),
+    Outcome                 VARCHAR(255)
 );
 
 CREATE TABLE public.Broker_Adherence (
     Broker_Adherence_ID VARCHAR PRIMARY KEY,
     Call_ID VARCHAR REFERENCES public.Call(Call_ID) NULL,
+    Lead_ID INT REFERENCES public.Lead(Lead_ID) NULL,
     Role VARCHAR(50),
     Timestamp TIMESTAMP NOT NULL,
     Broker_ID VARCHAR REFERENCES public.Broker(Broker_ID) NULL,
@@ -231,7 +238,9 @@ CREATE TABLE public.Broker_Adherence (
     Reason VARCHAR(65535),
     Summary VARCHAR(65535),
     Created_Datetime TIMESTAMP,
-    Velocify_UUID VARCHAR(255)
+    Velocify_UUID VARCHAR(255),
+    Call_Type               VARCHAR(255),
+    Outcome                 VARCHAR(255)
 );
 CREATE TABLE public.lead_summary (
     Lead_Summary_ID VARCHAR PRIMARY KEY,
@@ -256,7 +265,10 @@ CREATE TABLE public.lead_summary (
     Lead_Qualification_Reason VARCHAR(65535),
     Summary VARCHAR(65535),
     Created_Datetime TIMESTAMP,
-    Velocify_UUID VARCHAR(255)
+    Velocify_UUID VARCHAR(255),
+    Source VARCHAR(65535),
+    Call_Type               VARCHAR(255),
+    Outcome                 VARCHAR(255)
 );
 
 CREATE TABLE public.lead_details (
@@ -271,11 +283,14 @@ CREATE TABLE public.lead_details (
     Score DECIMAL(5,2),
     reason VARCHAR(65535),
     Created_Datetime TIMESTAMP,
-    Velocify_UUID VARCHAR(255)
+    Velocify_UUID VARCHAR(255),
+    Call_Type               VARCHAR(255),
+    Outcome                 VARCHAR(255)
 );
 CREATE TABLE public.broker_dashboard (
     broker_summary_id       VARCHAR PRIMARY KEY,
     call_id                 VARCHAR(50),
+    Lead_ID INT REFERENCES public.Lead(Lead_ID) NULL,
     timestamp               TIMESTAMP,
     broker_id               VARCHAR(255),
     broker_name             VARCHAR(100),
@@ -289,7 +304,11 @@ CREATE TABLE public.broker_dashboard (
     type                    VARCHAR(50),         -- 'intrinsics' or 'adherence'
     criteria                VARCHAR(65535),
     score                   DECIMAL(5,2),
-    reason                  VARCHAR(65535)
+    reason                  VARCHAR(65535),
+    Created_Datetime        TIMESTAMP,
+    Velocify_UUID           VARCHAR(255),
+    Call_Type               VARCHAR(255),
+    Outcome                 VARCHAR(255)
 );
 
 CREATE TABLE public.lead_dashboard (
@@ -309,7 +328,7 @@ CREATE TABLE public.lead_dashboard (
     Lead_Intrinsic_Avg DECIMAL,
     Concern_Type VARCHAR(255),
     Concern_Type_Reason VARCHAR(65535),
-    Dollar_Amount INT,
+    Dollar_Amount BIGINT,
     Account_Type VARCHAR(255),
     Lead_Qualification VARCHAR(255),
     Lead_Qualification_Reason VARCHAR(65535),
@@ -320,11 +339,43 @@ CREATE TABLE public.lead_dashboard (
     DurationInSecs INT,
     Criteria VARCHAR(255),
     Score DECIMAL(5,2),
-    Reason VARCHAR(65535)
+    Reason VARCHAR(65535),
+    Created_Datetime TIMESTAMP,
+    Velocify_UUID VARCHAR(255),
+    Source  VARCHAR(65535)
+    Call_Type               VARCHAR(255),
+    Outcome                 VARCHAR(255)
 );
 CREATE TABLE public.sales (
     Lead_ID         INT PRIMARY KEY,
     Date           VARCHAR(255),
     Amount         VARCHAR(255),
     GrossSaleAmount VARCHAR(255)  
+);
+
+
+CREATE TABLE public.llmBatches (
+    id                      INT PRIMARY KEY,
+    call_id                 VARCHAR(255),
+    date_time               TIMESTAMP,
+    batch_number            INT,
+    processing_time         TIMESTAMP,
+    processing_status       VARCHAR(255)
+);
+
+
+CREATE TABLE public.errorLog (
+    id                      VARCHAR PRIMARY KEY,
+    date                    VARCHAR(255),
+    type                    VARCHAR(255),
+    totalRecords            INT,
+    failed                  INT,
+    error                   VARCHAR(65535),
+    brokerOverarchingSummary INT,
+    brokerOpportunities      INT,
+    brokerPositives          INT,
+    leadAudioCallType        INT,
+    leadConcernType          INT,
+    leadQualification        INT,
+    leadClientType           INT
 );

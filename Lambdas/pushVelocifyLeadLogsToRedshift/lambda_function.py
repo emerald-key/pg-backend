@@ -34,6 +34,7 @@ secret_json = json.loads(get_secret_value_response['SecretString'])
 
 cluster_id = secret_json['dbClusterIdentifier']
 database_name = secret_json['dbName']
+
 # Redshift client
 config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config=config)
@@ -96,9 +97,9 @@ def lambda_handler(event, context):
     # return
     try:
         # bucket_name = "raw-velocify-leadlogs"
-        object_key = "AI_test_20250311_0831324a1b_Feb1toMarch102025.csv"
+        # object_key = "AI_test_20250311_0831324a1b_Feb1toMarch102025.csv"
         bucket_name = os.environ.get('bucket_name')
-        # object_key = event['Records'][0]['s3']['object']['key']
+        object_key = event['Records'][0]['s3']['object']['key']
         # Skip processing if the file is in the "processed/" folder
         if object_key.startswith('processed/'):
             logger.info(f"Skipping file: {object_key}")
