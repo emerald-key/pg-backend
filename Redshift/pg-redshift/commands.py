@@ -263,3 +263,122 @@ WHERE reason = 'Parsing failed or response was not in valid JSON format.';
 ALTER TABLE public.broker_dashboard
 ADD CONSTRAINT fk_call_lead
 FOREIGN KEY (Lead_ID) REFERENCES public.lead(Lead_ID);
+
+---MAIN Query to load transcripts to table Avoid duplicates by call id-----------
+
+BEGIN;
+
+-- Step 1: Create a temp table
+CREATE TEMP TABLE temp_transcript AS 
+SELECT * 
+FROM public.Transcript
+WHERE 1=0; -- Creates empty table with the same structure
+
+-- Step 2: Load data into temp table from S3
+COPY temp_transcript (call_id, transcript_id, transcript_url)
+FROM 's3://raw-velocify-callrecording-transcriptions/'
+CREDENTIALS 'aws_access_key_id=YOUR_KEY;aws_secret_access_key=YOUR_SECRET'
+JSON 's3://velocify-json-paths/transcription.json'
+REGION 'us-east-1';
+
+-- Step 3: Insert only new call_ids (no duplicates)
+INSERT INTO public.Transcript (call_id, transcript_id, transcript_url)
+SELECT DISTINCT t.call_id, t.transcript_id, t.transcript_url
+FROM temp_transcript t
+LEFT JOIN public.Transcript main
+ON t.call_id = main.call_id
+WHERE main.call_id IS NULL;
+
+COMMIT;
+
+
+###Find and delete duplicates in transcript table:
+
+
+
+SELECT call_id, COUNT(*) AS duplicate_count
+FROM transcript
+GROUP BY call_id
+HAVING COUNT(*) > 1;
+
+SELECT * from transcript where call_id = 'F4896B84-C63C-410E-B560-55F10A1298A8';
+
+DELETE FROM transcript
+USING (
+    SELECT transcript_id
+    FROM (
+        SELECT 
+            transcript_id,
+            ROW_NUMBER() OVER (PARTITION BY call_id ORDER BY transcript_id) AS rn
+        FROM transcript
+    ) t
+    WHERE t.rn > 1
+) duplicates
+WHERE transcript.transcript_id = duplicates.transcript_id;
+
+
+-- Sample inserts for the last 7 days
+INSERT INTO public.errorLog (
+    id, date, type, totalRecords, failed, error,
+    brokerOverarchingSummary, brokerOpportunities, brokerPositives,
+    leadAudioCallType, leadConcernType, leadQualification, leadClientType
+) VALUES
+-- June 17
+('id-2005', '2025-06-17', 'broker_adherence', 200, 5, '', 10, 5, 3, 8, 4, 2, 1),
+('id-2006', '2025-06-17', 'broker_summary', 70, 2, '', 5, 2, 1, 4, 1, 1, 0),
+('id-2007', '2025-06-17', 'broker_intrinsics', 40, 2, '', 5, 2, 1, 4, 1, 1, 0),
+('id-2008', '2025-06-17', 'lead_details', 90, 2, '', 5, 2, 1, 4, 1, 1, 0),
+('id-2009', '2025-06-17', 'lead_summary', 20, 2, '', 5, 2, 1, 4, 1, 1, 0);
+
+SELECT 
+    date,
+    SUM(totalRecords) AS total_records,
+    SUM(failed) AS total_failed
+FROM errorLog
+WHERE date >= CURRENT_DATE - INTERVAL '7 day'
+GROUP BY date
+ORDER BY date;
+
+##get count of calls within date
+
+SELECT COUNT(*) AS call_count
+FROM call
+JOIN transcript ON call.call_id = transcript.call_id
+WHERE call.date_time >= '2025-03-21 00:00:00'
+  AND call.date_time <  '2025-03-24 00:00:00'
+  AND call.talk_time > 60;
+
+##update table with other table info
+UPDATE lead_summary
+SET 
+    broker_name = bs.broker_name,
+    broker_id = bs.broker_id,
+    role = bs.role
+FROM broker_summary bs
+WHERE lead_summary.call_id = bs.call_id;
+
+
+UPDATE lead_details
+SET 
+    broker_name = bs.broker_name,
+    broker_id = bs.broker_id,
+    role = bs.role
+FROM broker_summary bs
+WHERE lead_details.call_id = bs.call_id;
+
+
+## update reason in broker adherence based on broker role and criteria
+UPDATE broker_adherence
+SET reason = CASE
+    WHEN role = 'Sr. Account Executive' AND criteria IN ('Ask_about_experience', 'Ask_about_concern', 'Ask_about_interest', 'Call Transfer', 'Jr_Credibility', 'Discuss funds', 'Reference_creative') 
+        THEN 'This feature is related to Jr. Account Executive'
+    WHEN role <> 'Sr. Account Executive' AND criteria IN ('Ask for sale', 'Consultation', 'Sr_Credibility', 'Time frame', 'How sale works', 'Introduction', 'Market update', 'Re-qualification') 
+        THEN 'This feature is related Sr. Account Executive'
+    ELSE NULL
+END
+WHERE
+    (
+        (role = 'Sr. Account Executive' AND criteria IN ('Ask_about_experience', 'Ask_about_concern', 'Ask_about_interest', 'Call Transfer', 'Jr_Credibility', 'Discuss funds', 'Reference_creative'))
+        OR
+        (role <> 'Sr. Account Executive' AND criteria IN ('Ask for sale', 'Consultation', 'Sr_Credibility', 'Time frame', 'How sale works', 'Introduction', 'Market update', 'Re-qualification'))
+    )

@@ -76,24 +76,11 @@ def stream_query_results_to_s3(statement_id):
         result = client_redshift.get_statement_result(Id=statement_id, NextToken=next_token) if next_token else client_redshift.get_statement_result(Id=statement_id)
 
         if writer is None:
-            writer = csv.writer(csv_buffer, quoting=csv.QUOTE_MINIMAL)
+            writer = csv.writer(csv_buffer)
             writer.writerow([col['name'] for col in result['ColumnMetadata']])
 
         for row in result['Records']:
-            row_data = []
-            for col in row:
-                val = list(col.values())[0] if col else None
-
-                # Handle None (NULL) values
-                if val is None:
-                    row_data.append('')
-                # Handle Redshift returning `True` for NULLs sometimes
-                elif isinstance(val, bool) and val is True:
-                    row_data.append('')
-                else:
-                    row_data.append(val)
-
-            writer.writerow(row_data)
+            writer.writerow([list(col.values())[0] if col else '' for col in row])
 
         next_token = result.get('NextToken')
         if not next_token:
@@ -102,7 +89,6 @@ def stream_query_results_to_s3(statement_id):
     s3_client.put_object(Bucket=bucket, Key=s3_key, Body=csv_buffer.getvalue())
     logger.info(f"Streamed CSV to s3://{bucket}/{s3_key}")
     return s3_key
-
 
 
 def copy_to_redshift_append(table_name, s3_key):

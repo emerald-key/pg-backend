@@ -205,7 +205,8 @@ CREATE TABLE public.Broker_Summary (
     Created_Datetime TIMESTAMP,
     Velocify_UUID VARCHAR(255),
     Call_Type               VARCHAR(255),
-    Outcome                 VARCHAR(255)
+    Outcome                 VARCHAR(255).
+    Broker_Name
 );
 
 CREATE TABLE public.Broker_Intrinsics (
@@ -268,7 +269,10 @@ CREATE TABLE public.lead_summary (
     Velocify_UUID VARCHAR(255),
     Source VARCHAR(65535),
     Call_Type               VARCHAR(255),
-    Outcome                 VARCHAR(255)
+    Outcome                 VARCHAR(255),
+    Broker_Name  VARCHAR(255)
+    Broker_ID  VARCHAR(255)
+    role  VARCHAR(255)
 );
 
 CREATE TABLE public.lead_details (
@@ -284,8 +288,11 @@ CREATE TABLE public.lead_details (
     reason VARCHAR(65535),
     Created_Datetime TIMESTAMP,
     Velocify_UUID VARCHAR(255),
-    Call_Type               VARCHAR(255),
-    Outcome                 VARCHAR(255)
+    Call_Type    VARCHAR(255),
+    Outcome      VARCHAR(255),
+    Broker_Name  VARCHAR(255)
+    Broker_ID  VARCHAR(255)
+    role  VARCHAR(255)
 );
 CREATE TABLE public.broker_dashboard (
     broker_summary_id       VARCHAR PRIMARY KEY,
@@ -321,7 +328,7 @@ CREATE TABLE public.lead_dashboard (
     Lead_Score_By_Broker VARCHAR(65535),
     Total_Contact_Attempts INT,
     Lead_Affiliate_Level_Category VARCHAR(255),
-    Audio_Call_Type VARCHAR(255),
+    Audio_Call_Type VARCHAR(65535),
     Audio_Call_Type_Reason VARCHAR(65535),
     Lead_Type VARCHAR(255),
     Lead_Type_Reason VARCHAR(65535),
@@ -344,23 +351,16 @@ CREATE TABLE public.lead_dashboard (
     Velocify_UUID VARCHAR(255),
     Source  VARCHAR(65535)
     Call_Type               VARCHAR(255),
-    Outcome                 VARCHAR(255)
+    Outcome                 VARCHAR(255),
+    Broker_Name  VARCHAR(255)
+    Broker_ID  VARCHAR(255)
+    role  VARCHAR(255)
 );
 CREATE TABLE public.sales (
     Lead_ID         INT PRIMARY KEY,
     Date           VARCHAR(255),
     Amount         VARCHAR(255),
     GrossSaleAmount VARCHAR(255)  
-);
-
-
-CREATE TABLE public.llmBatches (
-    id                      INT PRIMARY KEY,
-    call_id                 VARCHAR(255),
-    date_time               TIMESTAMP,
-    batch_number            INT,
-    processing_time         TIMESTAMP,
-    processing_status       VARCHAR(255)
 );
 
 
@@ -379,3 +379,39 @@ CREATE TABLE public.errorLog (
     leadQualification        INT,
     leadClientType           INT
 );
+
+
+CREATE TABLE public.llmBatches (
+    id                      VARCHAR PRIMARY KEY,
+    call_id                 VARCHAR(255),
+    date_time               TIMESTAMP,
+    batch_number            VARCHAR(25),
+    processed_time          VARCHAR(255),
+    processing_status       VARCHAR(255)
+);
+
+CREATE TABLE public.alertMessages (
+    id                      VARCHAR PRIMARY KEY,
+    lead_id                 INT,
+    prev_lead_type          VARCHAR(255),
+    current_lead_type       VARCHAR(255),
+    prev_timestamp          TIMESTAMP,
+    "current_timestamp"       TIMESTAMP    
+);
+
+
+---create test tables with main table structure
+CREATE TABLE broker_summary_test AS 
+SELECT * FROM broker_summary WHERE 1=0;
+
+CREATE TABLE broker_intrinsics_test AS 
+SELECT * FROM broker_intrinsics WHERE 1=0;
+
+CREATE TABLE broker_adherence_test AS 
+SELECT * FROM broker_adherence WHERE 1=0;
+
+CREATE TABLE lead_summary_test AS 
+SELECT * FROM lead_summary WHERE 1=0;
+
+CREATE TABLE lead_details_test AS 
+SELECT * FROM lead_details WHERE 1=0;
