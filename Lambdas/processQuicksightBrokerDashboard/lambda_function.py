@@ -16,6 +16,7 @@ logger.setLevel(logging.INFO)
 s3_client = boto3.client('s3')
 session = boto3.session.Session()
 region = session.region_name
+ses_client = boto3.client('ses')
 client_secretsmanager = session.client(service_name='secretsmanager', region_name=region)
 config = Config(connect_timeout=5, read_timeout=5)
 client_redshift = session.client("redshift-data", config=config)
@@ -34,6 +35,11 @@ def lambda_handler(event, context):
         return {'statusCode': 200, 'body': json.dumps('Broker dashboard updated successfully!')}
     except Exception as e:
         logger.error(str(e))
+        err_subject = "Error Refreshing Broker Dashboard"
+        err_body = f"""
+        Error : {str(e)}
+        """
+        send_email(err_subject, err_body)
         return {'statusCode': 500, 'body': json.dumps(f"Error: {str(e)}")}
 
 def execute_redshift_query(query_str, return_statement_id=False):
@@ -65,35 +71,9 @@ def execute_redshift_query(query_str, return_statement_id=False):
         logger.error(f"Error executing query: {str(e)}")
         raise
 
-def stream_query_results_to_s3_old(statement_id):
-    bucket = os.environ['bucket_name']
-    s3_key = f"dashboard/broker/{datetime.utcnow().strftime('%Y-%m-%d')}.csv"
-
-    csv_buffer = io.StringIO()
-    writer = None
-    next_token = None
-
-    while True:
-        result = client_redshift.get_statement_result(Id=statement_id, NextToken=next_token) if next_token else client_redshift.get_statement_result(Id=statement_id)
-
-        if writer is None:
-            writer = csv.writer(csv_buffer)
-            writer.writerow([col['name'] for col in result['ColumnMetadata']])
-
-        for row in result['Records']:
-            writer.writerow([list(col.values())[0] if col else '' for col in row])
-
-        next_token = result.get('NextToken')
-        if not next_token:
-            break
-
-    s3_client.put_object(Bucket=bucket, Key=s3_key, Body=csv_buffer.getvalue())
-    logger.info(f"Streamed CSV to s3://{bucket}/{s3_key}")
-    return s3_key
-
 def stream_query_results_to_s3(statement_id):
     bucket = os.environ['bucket_name']
-    s3_key = f"dashboard/broker/{datetime.utcnow().strftime('%Y-%m-%d')}.csv"
+    s3_key = f"dashboard/broker/{datetime.utcnow().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
 
     csv_buffer = io.StringIO()
     writer = None
@@ -135,7 +115,8 @@ def copy_to_redshift_append(table_name, s3_key):
     aws_credentials = json.loads(client_secretsmanager.get_secret_value(SecretId=os.environ['credentials_secret_name'])['SecretString'])
     aws_access_key = aws_credentials['AWS_ACCESS_KEY_ID']
     aws_secret_access_key = aws_credentials['AWS_SECRET_ACCESS_KEY']
-
+    before_count = get_table_row_count()
+    logger.info(f"Row count before insert: {before_count}")
     copy_query = f"""
         COPY {table_name} (
             broker_summary_id, call_id, lead_id, timestamp, broker_id, broker_name,
@@ -145,10 +126,50 @@ def copy_to_redshift_append(table_name, s3_key):
         )
         FROM 's3://{bucket}/{s3_key}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
-        CSV IGNOREHEADER 1;
+        CSV IGNOREHEADER 1 BLANKSASNULL EMPTYASNULL;
     """
     execute_redshift_query(copy_query)
+    after_count = get_table_row_count()
+    logger.info(f"Row count after insert: {after_count}")
+    # Calculate inserted rows
+    inserted_rows = after_count - before_count
+    logger.info(f"Rows inserted into public.call: {inserted_rows}")
+    return inserted_rows
+    
+def get_table_row_count():
+    try:
+        # Execute the query
+        query = "SELECT COUNT(*) FROM public.broker_dashboard;"
+        response = client_redshift.execute_statement(
+            Database=database_name,
+            SecretArn=secret_arn,
+            Sql=query,
+            ClusterIdentifier=cluster_id
+        )
+        statement_id = response['Id']
+        
+        # Wait for the query to complete
+        while True:
+            status_response = client_redshift.describe_statement(Id=statement_id)
+            if status_response['Status'] in ['FINISHED', 'FAILED', 'ABORTED']:
+                break
+            logger.info(f"Waiting for row count query to complete... Current status: {status_response['Status']}")
+            time.sleep(1)
 
+        if status_response['Status'] == 'FINISHED':
+            # Fetch the result
+            result_response = client_redshift.get_statement_result(Id=statement_id)
+            records = result_response['Records']
+            # Extract the row count from the response
+            row_count = int(records[0][0]['longValue'])
+            logger.info(f"Row count: {row_count}")
+            return row_count
+        else:
+            raise Exception(f"Query failed with status: {status_response['Status']}")
+
+    except Exception as e:
+        logger.info(f"Error getting table row count: {e}")
+        raise
 
 def run_dashboard_refresh():
     max_date_query = "SELECT MAX(created_datetime) FROM broker_dashboard;"
@@ -183,4 +204,45 @@ def run_dashboard_refresh():
     logger.info("Main query finished. Streaming results to S3...")
 
     s3_key = stream_query_results_to_s3(statement_id)
-    copy_to_redshift_append("broker_dashboard", s3_key)
+    logger.info(f"Streamed CSV to s3://{os.environ['bucket_name']}/{s3_key}")
+    copied_rows = copy_to_redshift_append("broker_dashboard", s3_key)
+    logger.info(f"Copy to Redshift finished: {copied_rows}")
+    # Step 5: Count rows in the CSV file (excluding header)
+    response = s3_client.get_object(Bucket=os.environ['bucket_name'], Key=s3_key)
+    csv_content = response['Body'].read().decode('utf-8')
+    csv_buffer = io.StringIO(csv_content)
+    reader = csv.reader(csv_buffer)
+    csv_row_count = -1  # Start with -1 to exclude header
+    for _ in reader:
+        csv_row_count += 1
+    logger.info(f"CSV row count: {csv_row_count}")
+    # if(copied_rows < csv_row_count):
+        # Step 6: Send SES email
+    subject = "Broker Dashboard Logs : Redshift Data Load Completed"
+    body = f"""
+    Bucket Name: {os.environ['bucket_name']}
+    CSV File Loaded: {s3_key}
+    Total Rows in CSV: {csv_row_count}
+    Rows Inserted to Redshift: {copied_rows}
+    """
+    send_email(subject, body)
+
+def send_email(subject, body):
+    try:
+        recipient_emails_env = os.environ.get('SES_RECIPIENT_EMAILS', '')
+        # Split the emails into a list
+        recepient_emails = [email.strip() for email in recipient_emails_env.split(',') if email.strip()]
+        print(f"recepient_emails:{recepient_emails}")
+        ses_client.send_email(
+            Source=os.environ['SES_SOURCE_EMAIL'],
+            Destination={'ToAddresses': recepient_emails},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {'Text': {'Data': body}}
+            }
+        )
+        logger.info("Email sent successfully.")
+    except Exception as e:
+        logger.info(f"Error sending email: {e}")
+        raise
+

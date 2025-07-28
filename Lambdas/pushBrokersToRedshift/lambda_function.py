@@ -1,11 +1,10 @@
 import os
+import time
 import json
 import boto3
 import botocore 
 import botocore.session as bc
 from botocore.client import Config
-import time
-import io
 import uuid
 import logging
 
@@ -13,89 +12,122 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO) 
 
-
 s3_client = boto3.client('s3')
-secret_name=os.environ['SecretId'] # getting SecretId from Environment varibales
+secret_name = os.environ['SecretId']  # getting SecretId from Environment variables
 session = boto3.session.Session()
 region = session.region_name
+
 # Initializing Secret Manager's client    
 client = session.client(
     service_name='secretsmanager',
-        region_name=region
-    )
+    region_name=region
+)
 get_secret_value_response = client.get_secret_value(
-        SecretId=secret_name
-    )
-secret_arn=get_secret_value_response['ARN']
+    SecretId=secret_name
+)
+secret_arn = get_secret_value_response['ARN']
 secret = get_secret_value_response['SecretString']
 secret_json = json.loads(secret)
-cluster_id=secret_json['dbClusterIdentifier']
+cluster_id = secret_json['dbClusterIdentifier']
 database_name = secret_json['dbName']
 
 # Initializing Botocore client
 bc_session = bc.get_session()
 session = boto3.Session(
-        botocore_session=bc_session,
-        region_name=region
-    )
+    botocore_session=bc_session,
+    region_name=region
+)
+
 # Initializing Redshift's client   
 config = Config(connect_timeout=5, read_timeout=5)
-client_redshift = session.client("redshift-data", config = config)
+client_redshift = session.client("redshift-data", config=config)
+
+
+def broker_exists(broker_name):
+    """
+    Check if a broker already exists in the Redshift table.
+    """
+    query = f"SELECT COUNT(*) FROM public.Broker WHERE broker_name = '{broker_name}';"
+    try:
+        response = execute_redshift_query(query)
+        query_id = response['Id']
+        
+        # Wait for the query to complete
+        while True:
+            time.sleep(0.5)
+            desc_response = client_redshift.describe_statement(Id=query_id)
+            status = desc_response['Status']
+            
+            if status == 'FINISHED':
+                # Fetch the results
+                result_response = client_redshift.get_statement_result(Id=query_id)
+                if 'Records' in result_response and result_response['Records']:
+                    count = result_response['Records'][0][0]['longValue']
+                    return count > 0
+                return False
+            elif status in ('FAILED', 'ABORTED'):
+                logger.error(f"Query failed: {desc_response.get('Error', 'Unknown error')}")
+                return False
+    
+    except Exception as e:
+        logger.error(f"Error checking broker existence: {str(e)}")
+        return False
+
 
 def lambda_handler(event, context):
-    logger.info(f"Entered lambda_handler: {event}")
+    # logger.info(f"Entered lambda_handler: {event}")
     brokers = brokers_list()
     try:
         for broker in brokers:
-          try:
-            # Handle optional fields and substitute NULL where necessary
-            broker_id = uuid.uuid4()
-            broker_name_original = broker.get('name') or 'NULL'
-            phoneNumber = broker.get('phoneNumber') or 'NULL'
-            extension = broker.get('extension') or 'NULL'
-            email = broker.get('email') or 'NULL'
-            role = broker.get('role') or 'NULL'
-            state = broker.get('state') or 'NULL'
-            broker_tenure = broker.get('broker_tenure') or 'NULL'
+            try:
+                # Handle optional fields and substitute NULL where necessary
+                broker_id = uuid.uuid4()
+                broker_name_original = broker.get('name') or 'NULL'
+                phoneNumber = broker.get('phoneNumber') or 'NULL'
+                extension = broker.get('extension') or 'NULL'
+                email = broker.get('email') or 'NULL'
+                role = broker.get('role') or 'NULL'
+                state = broker.get('state') or 'NULL'
+                broker_tenure = broker.get('broker_tenure') or 'NULL'
 
-            # Reverse the broker name (first name, last name -> last name, first name)
-            if broker_name_original != 'NULL':
-                name_parts = broker_name_original.split()
-                if len(name_parts) == 2:  # Ensure it's a first and last name
-                    broker_name = f"{name_parts[1]}, {name_parts[0]}"
+                # Reverse the broker name (first name, last name -> last name, first name)
+                if broker_name_original != 'NULL':
+                    name_parts = broker_name_original.split()
+                    if len(name_parts) == 2:  # Ensure it's a first and last name
+                        broker_name = f"{name_parts[1]}, {name_parts[0]}"
+                    else:
+                        broker_name = broker_name_original  # In case of unexpected format (e.g., middle names)
                 else:
-                    broker_name = broker_name_original  # In case of unexpected format (e.g., middle names)
-            else:
-                broker_name = 'NULL'
+                    broker_name = 'NULL'
 
-            # If the fields are strings, wrap them in single quotes, otherwise use raw values
-            broker_id = f"'{broker_id}'" if broker_id != 'NULL' else broker_id
-            broker_name_original = f"'{broker_name_original}'" if broker_name_original != 'NULL' else broker_name_original
-            broker_name = f"'{broker_name}'" if broker_name != 'NULL' else broker_name
-            phoneNumber = f"'{phoneNumber}'" if phoneNumber != 'NULL' else phoneNumber
-            email = f"'{email}'" if email != 'NULL' else email
-            role = f"'{role}'" if role != 'NULL' else role
-            state = f"'{state}'" if state != 'NULL' else state
-            extension = f"'{extension}'" if extension != 'NULL' else extension
+                # Check if the broker already exists
+                if broker_exists(broker_name):
+                    logger.info(f"Broker {broker_name} already exists. Skipping insertion.")
+                    logger.info("Broker already exists")
+                    continue  # Skip to the next broker if it exists
+                # return
+                # If the fields are strings, wrap them in single quotes, otherwise use raw values
+                broker_id = f"'{broker_id}'" if broker_id != 'NULL' else broker_id
+                broker_name_original = f"'{broker_name_original}'" if broker_name_original != 'NULL' else broker_name_original
+                broker_name = f"'{broker_name}'" if broker_name != 'NULL' else broker_name
+                phoneNumber = f"'{phoneNumber}'" if phoneNumber != 'NULL' else phoneNumber
+                email = f"'{email}'" if email != 'NULL' else email
+                role = f"'{role}'" if role != 'NULL' else role
+                state = f"'{state}'" if state != 'NULL' else state
+                extension = f"'{extension}'" if extension != 'NULL' else extension
 
-            delete_sql_query = f"""
-            DELETE FROM public.Broker WHERE broker_name = {broker_name};
-            """
-            # Construct the SQL query with reversed_name
-            insert_sql_query = f"""
-            INSERT INTO public.Broker (broker_id, broker_name_original, broker_name, phoneNumber, email, extension, state, role)
-            VALUES ({broker_id}, {broker_name_original}, {broker_name}, {phoneNumber}, {email}, {extension}, {state}, {role});
-            """
-            # Execute delete query first
-            execute_redshift_query(delete_sql_query)
-            
-            # Execute insert query
-            execute_redshift_query(insert_sql_query)
+                # Construct the SQL insert query
+                insert_sql_query = f"""
+                INSERT INTO public.Broker (broker_id, broker_name_original, broker_name, phoneNumber, email, extension, state, role)
+                VALUES ({broker_id}, {broker_name_original}, {broker_name}, {phoneNumber}, {email}, {extension}, {state}, {role});
+                """
+                
+                # Execute insert query
+                execute_redshift_query(insert_sql_query)
 
-          except Exception as broker_error:
-              logger.info(f"Error processing broker {broker}: {str(broker_error)}")
+            except Exception as broker_error:
+                logger.info(f"Error processing broker {broker}: {str(broker_error)}")
 
-        
         return {
             'statusCode': 200,
             'body': 'Recordings processed successfully!'
@@ -544,6 +576,244 @@ def brokers_list():
     "email": "b.rasic@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+  },
+  #new brokers added on 14-7-2025
+  {
+    "name": "Adam Davis",
+    "phoneNumber": "469-613-0587",
+    "extension": "141",
+    "email": "a.davis@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Brendin Woodard",
+    "phoneNumber": "469-405-1606",
+    "extension": "193",
+    "email": "b.woodard@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Chris Turner",
+    "phoneNumber": "469-775-9578",
+    "extension": "189",
+    "email": "c.turner@prioritygold.com",
+    "state": "TX",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Daniel Damian",
+    "phoneNumber": "469-373-1592",
+    "extension": "152",
+    "email": "d.damian@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Dillon Cory",
+    "phoneNumber": "469-405-2874",
+    "extension": "191",
+    "email": "d.cory@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Emmett Showers",
+    "phoneNumber": "469-935-7025",
+    "extension": "123",
+    "email": "e.showers@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Irving Maldonado",
+    "phoneNumber": "469-487-7548",
+    "extension": "161",
+    "email": "irving.m@prioritygold.com",
+    "state": "R",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Joe Huss",
+    "phoneNumber": "469-648-3958",
+    "extension": "145",
+    "email": "j.huss@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Luke Dykstra",
+    "phoneNumber": "469-895-9207",
+    "extension": "174",
+    "email": "l.dykstra@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Mark Stevens",
+    "phoneNumber": "469-729-8270",
+    "extension": "185",
+    "email": "m.stevens@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Matt Saladino",
+    "phoneNumber": "469-373-1619",
+    "extension": "153",
+    "email": "m.saladino@prioritygold.com",
+    "state": "TX",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Matt Williams",
+    "phoneNumber": "469-369-0592",
+    "extension": "138",
+    "email": "matt.w@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Max Bershad",
+    "phoneNumber": "469-351-2700",
+    "extension": "157",
+    "email": "m.bershad@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Mike Gould",
+    "phoneNumber": "469-405-3454",
+    "extension": "173",
+    "email": "m.gould@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Preston Cramer",
+    "phoneNumber": "469-649-9626",
+    "extension": "139",
+    "email": "p.cramer@prioritygold.com",
+    "state": "TX",
+    "role": "Jr. Account Executive",
+  },{
+    "name": "Vincent Whatley",
+    "phoneNumber": "469-895-2879",
+    "extension": "190",
+    "email": "v.whatley@prioritygold.com",
+    "state": "TX",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "James Checkowski",
+    "phoneNumber": "469-902-6773",
+    "extension": "120",
+    "email": "j.checkowski@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Christian Taylor",
+    "phoneNumber": "469-902-7344",
+    "extension": "181",
+    "email": "c.taylor@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Robert Paet",
+    "phoneNumber": "469-436-4350",
+    "extension": "187",
+    "email": "r.paet@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Aaron Daniels",
+    "phoneNumber": "469-405-7906",
+    "extension": "183",
+    "email": "a.daniels@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Brian Lawlor",
+    "phoneNumber": "469-405-3539",
+    "extension": "188",
+    "email": "b.lawlor@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Chris James",
+    "phoneNumber": "469-472-1790",
+    "extension": "154",
+    "email": "c.james@prioritygold.com",
+    "state": "CA",
+    "role": "Sr. Account Executive",
+  },
+  {
+    "name": "Daniel Joseph",
+    "phoneNumber": "469-722-5488",
+    "extension": "142",
+    "email": "d.joseph@prioritygold.com",
+    "state": "CA",
+    "role": "Sr. Account Executive",
+  },{
+    "name": "Greg Reed",
+    "phoneNumber": "469-663-5526",
+    "extension": "167",
+    "email": "g.reed@prioritygold.com",
+    "state": "CA",
+    "role": "Sr. Account Executive",
+  },
+  {
+    "name": "James Bryan",
+    "phoneNumber": "469-868-0493",
+    "extension": "144",
+    "email": "j.bryan@prioritygold.com",
+    "state": "CA",
+    "role": "Sr. Account Executive",
+  },
+  {
+    "name": "Kevin Manning",
+    "phoneNumber": "469-694-8549",
+    "extension": "132",
+    "email": "k.manning@prioritygold.com",
+    "state": "R",
+    "role": "Sr. Account Executive",
+  },
+  {
+    "name": "Lance Hill",
+    "phoneNumber": "469-405-1565",
+    "extension": "192",
+    "email": "l.hill@prioritygold.com",
+    "state": "TX",
+    "role": "Sr. Account Executive",
+  },{
+    "name": "Will Hart",
+    "phoneNumber": "469-802-7068",
+    "extension": "194",
+    "email": "w.hart@prioritygold.com",
+    "state": "R",
+    "role": "Sr. Account Executive",
+  },
+  {
+    "name": "Lev Shvarts",
+    "phoneNumber": "469-902-7325",
+    "extension": "128",
+    "email": "l.shvarts@prioritygold.com",
+    "state": "CA",
+    "role": "Sr. Account Executive",
+  },
+  {
+    "name": "Tylor Grimes",
+    "phoneNumber": "469-621-6946",
+    "extension": "127",
+    "email": "t.grimes@prioritygold.com",
+    "state": "CA",
+    "role": "Sr. Account Executive",
   }
 ]
 

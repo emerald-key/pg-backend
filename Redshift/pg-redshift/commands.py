@@ -382,3 +382,124 @@ WHERE
         OR
         (role <> 'Sr. Account Executive' AND criteria IN ('Ask for sale', 'Consultation', 'Sr_Credibility', 'Time frame', 'How sale works', 'Introduction', 'Market update', 'Re-qualification'))
     )
+
+##update call type and outcome in lead output tables
+
+UPDATE lead_summary
+SET 
+  call_type = call.call_type,
+  outcome = call.outcome
+FROM call
+WHERE lead_summary.call_id = call.call_id;
+
+UPDATE lead_details
+SET 
+  call_type = call.call_type,
+  outcome = call.outcome
+FROM call
+WHERE lead_details.call_id = call.call_id;
+
+
+UPDATE lead_summary
+SET 
+    broker_name = bs.broker_name,
+    broker_id = bs.broker_id,
+    role = bs.role
+FROM broker_summary bs
+WHERE lead_summary.call_id = bs.call_id;
+
+
+##update call type and outcome in broker output tables
+
+UPDATE broker_summary
+SET 
+  call_type = call.call_type,
+  outcome = call.outcome
+FROM call
+WHERE broker_summary.call_id = call.call_id;
+
+##update call type and outcome in lead dashboard  tables
+
+UPDATE lead_dashboard
+SET 
+    call_type = call.call_type,
+    outcome = call.outcome
+FROM call
+WHERE lead_dashboard.call_id = call.call_id
+  AND (lead_dashboard.call_type IS NULL OR TRIM(lead_dashboard.call_type) = '' 
+       OR lead_dashboard.outcome IS NULL OR TRIM(lead_dashboard.outcome) = '');
+
+
+UPDATE lead_dashboard
+SET 
+    broker_name = bs.broker_name,
+    broker_id = bs.broker_id,
+    role = bs.role
+FROM broker_summary bs
+WHERE lead_dashboard.call_id = bs.call_id
+  AND (
+        lead_dashboard.broker_name IS NULL OR TRIM(lead_dashboard.broker_name) = '' 
+        OR lead_dashboard.broker_id IS NULL OR TRIM(lead_dashboard.broker_id) = '' 
+        OR lead_dashboard.role IS NULL OR TRIM(lead_dashboard.role) = ''
+  );
+
+
+
+-- List of Call IDs to delete
+WITH ids_to_delete AS (
+    SELECT '41E047CA-EF67-406C-9968-CBA0B1238CB5' AS call_id UNION ALL
+    SELECT '4FC75B47-E2B9-4611-BA11-8EEB6A2378CD' UNION ALL
+    SELECT '06E3166F-5076-447F-9448-35BB1616AB29' UNION ALL
+    SELECT '923A71FB-CEEE-4CBD-8089-655CB9FD9870' UNION ALL
+    SELECT '59377A26-D2A4-438E-8E79-51A152C4E14B'
+)
+
+-- -- Delete from lead_summary
+-- DELETE FROM lead_summary
+-- WHERE call_id IN (SELECT call_id FROM ids_to_delete);
+
+-- Delete from lead_details
+-- DELETE FROM lead_details
+-- WHERE call_id IN (SELECT call_id FROM ids_to_delete);
+
+-- Delete from llmBatches
+DELETE FROM llmBatches
+WHERE call_id IN (SELECT call_id FROM ids_to_delete);
+
+COPY broker_intrinsics (Broker_Intrinsics_ID,Created_Datetime,Velocify_UUID,Call_ID,Lead_ID,Broker_ID,Broker_Name,Role,Timestamp,Criteria,Score,Reason,call_type,outcome)
+    FROM 's3://sample540/broker_intrinsics_outputs.csv'
+    CREDENTIALS 'key1=key1;key2=key2'
+    CSV IGNOREHEADER 1;
+
+COPY lead_details (lead_details_id,Created_Datetime,Velocify_UUID,lead_id,lead_name,call_id,timestamp,duration,durationInSecs,criteria,score,reason,call_type,outcome,broker_name,broker_id,role)
+    FROM 's3://sample540/lead_details_outputs.csv'
+    CREDENTIALS 'key1=key1;key2=key2'
+    CSV IGNOREHEADER 1;
+
+COPY broker_adherence (Broker_Adherence_ID,Created_Datetime,Velocify_UUID,Call_ID,Lead_ID,Broker_ID,Broker_Name,Role,Timestamp,Criteria,Score,Reason,Summary,call_type,outcome)
+    FROM 's3://sample540/broker_adherence_outputs.csv'
+    CREDENTIALS 'key1=key1;key2=key2'
+    CSV IGNOREHEADER 1;
+
+
+DELETE FROM broker_adherence
+WHERE timestamp >= '2025-03-12 00:00:00'
+  AND timestamp <  '2025-03-20 00:00:00'
+  AND created_datetime > '2025-07-09 00:00:00';
+
+
+DELETE FROM llmBatches
+USING (
+    SELECT call_id
+    FROM lead_details
+    WHERE timestamp >= '2025-03-12 00:00:00'
+      AND timestamp <  '2025-03-20 00:00:00'
+      AND created_datetime > '2025-07-09 00:00:00'
+) ld
+WHERE llmBatches.call_id = ld.call_id;
+
+SELECT *
+FROM lead_details
+WHERE timestamp >= '2025-03-12 00:00:00'
+  AND timestamp <  '2025-03-20 00:00:00'
+  AND created_datetime > '2025-07-09 00:00:00';

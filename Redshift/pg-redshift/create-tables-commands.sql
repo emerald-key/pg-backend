@@ -270,9 +270,10 @@ CREATE TABLE public.lead_summary (
     Source VARCHAR(65535),
     Call_Type               VARCHAR(255),
     Outcome                 VARCHAR(255),
-    Broker_Name  VARCHAR(255)
-    Broker_ID  VARCHAR(255)
-    role  VARCHAR(255)
+    Broker_Name  VARCHAR(255),
+    Broker_ID  VARCHAR(255),
+    role  VARCHAR(255),
+    actual_dollar_amount VARCHAR(65535)
 );
 
 CREATE TABLE public.lead_details (
@@ -352,9 +353,10 @@ CREATE TABLE public.lead_dashboard (
     Source  VARCHAR(65535)
     Call_Type               VARCHAR(255),
     Outcome                 VARCHAR(255),
-    Broker_Name  VARCHAR(255)
-    Broker_ID  VARCHAR(255)
-    role  VARCHAR(255)
+    Broker_Name  VARCHAR(255),
+    Broker_ID  VARCHAR(255),
+    role  VARCHAR(255),
+    actual_dollar_amount VARCHAR(65535)
 );
 CREATE TABLE public.sales (
     Lead_ID         INT PRIMARY KEY,
@@ -415,3 +417,32 @@ SELECT * FROM lead_summary WHERE 1=0;
 
 CREATE TABLE lead_details_test AS 
 SELECT * FROM lead_details WHERE 1=0;
+
+
+CREATE TABLE public.dataParsingErrors (
+    id                      VARCHAR PRIMARY KEY,
+    date                    VARCHAR(255),
+    type                    VARCHAR(255),
+    totalRecords            INT,
+    failed                  INT,
+    brokerOverarchingSummary INT,
+    brokerOpportunities      INT,
+    brokerPositives          INT,
+    leadAudioCallType        INT,
+    leadConcernType            INT,
+    leadQualification            INT,
+    leadClientType            INT
+);
+
+CREATE TABLE public.redFlagsData (
+    id                      VARCHAR PRIMARY KEY
+    Lead_ID                      INT,
+    Lead_Name                    VARCHAR(255),
+    Call_ID                      VARCHAR REFERENCES public.Call(Call_ID) NULL,
+    Broker_Name            VARCHAR,
+    Date                  timestamp,
+    Original_Score_Or_Type VARCHAR,
+    New_Score_Or_Type      VARCHAR,
+    Reason          VARCHAR(65535),
+    Created_Datetime  timestamp
+);

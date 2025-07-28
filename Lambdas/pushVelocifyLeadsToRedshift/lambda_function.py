@@ -224,19 +224,19 @@ def lambda_handler(event, context):
         copied_rows = copy_data_to_redshift(s3_path, table_name, column_list)
 
          # Step 4: Count rows in the CSV file (excluding header)
-        response = s3_client.get_object(Bucket=bucket_name, Key=input_file_key)
-        csv_lines = response['Body'].read().decode('utf-8').splitlines()
-        csv_row_count = len(csv_lines) - 1  # Exclude header
-        if(copied_rows < csv_row_count):
-            # Step 5: Send SES email
-            subject = "Leads : Redshift Data Load Completed"
-            body = f"""
-            Bucket Name: {bucket_name}
-            CSV File Loaded: {input_file_key}
-            Total Rows in CSV: {csv_row_count}
-            Rows Copied to Redshift: {copied_rows}
-            """
-            send_email(subject, body)
+        # response = s3_client.get_object(Bucket=bucket_name, Key=input_file_key)
+        # csv_lines = response['Body'].read().decode('utf-8').splitlines()
+        # csv_row_count = len(csv_lines) - 1  # Exclude header
+        # if(copied_rows < csv_row_count):
+        #     # Step 5: Send SES email
+        #     subject = "Leads : Redshift Data Load Completed"
+        #     body = f"""
+        #     Bucket Name: {bucket_name}
+        #     CSV File Loaded: {input_file_key}
+        #     Total Rows in CSV: {csv_row_count}
+        #     Rows Copied to Redshift: {copied_rows}
+        #     """
+        #     send_email(subject, body)
 
 
         return {

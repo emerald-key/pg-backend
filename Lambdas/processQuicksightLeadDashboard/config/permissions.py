@@ -6,3 +6,4 @@
 -SecretsManagerReadWrite
 -AmazonSESFullAccess
 -AWSLambdaVPCAccessExecutionRole
+-AmazonSESFullAccess
