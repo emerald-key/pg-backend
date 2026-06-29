@@ -1,0 +1,6 @@
+  pip install gspread google-auth google-api-python-client
+   pip install --upgrade gspread google-auth-oauthlib
+   pip install --upgrade gspread google-auth-oauthlib
+   (.venv) $ pip install --upgrade google-auth-oauthlib
+   pip install --upgrade google-auth-oauthlib
+   pip install --upgrade google-auth-oauthlib

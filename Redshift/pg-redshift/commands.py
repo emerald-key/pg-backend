@@ -503,3 +503,130 @@ FROM lead_details
 WHERE timestamp >= '2025-03-12 00:00:00'
   AND timestamp <  '2025-03-20 00:00:00'
   AND created_datetime > '2025-07-09 00:00:00';
+
+#calls with missing brokers
+
+
+UNLOAD ('
+     SELECT *
+    FROM (
+        SELECT *, ROW_NUMBER() OVER() AS rn
+        FROM call 
+        WHERE broker_name IS NULL OR TRIM(broker_name) = ''''
+    )
+    WHERE rn <= 25
+')
+TO 's3://sample540/calls_with_missing_brokers.csv' 
+CREDENTIALS 'key1=key1;key2=key2'
+DELIMITER ',' 
+FORMAT AS CSV 
+ALLOWOVERWRITE 
+PARALLEL OFF;
+
+SELECT COUNT(*) 
+FROM transcript t
+WHERE t.call_id IN (
+    SELECT c.call_id
+    FROM call c
+    WHERE c.date_time >= '2025-08-04 00:00:00'
+      AND c.date_time <  '2025-08-05 00:00:00'
+`);
+
+#Update broker roles in output tables
+SELECT COUNT(*)
+FROM broker_dashboard ls
+JOIN broker b
+  ON ls.broker_name = b.broker_name
+WHERE ls.role = 'nan';
+
+UPDATE broker_dashboard ls
+SET role = b.role
+FROM broker b
+WHERE ls.broker_name = b.broker_name
+  AND (ls.role IS NULL OR ls.role = 'nan');
+
+
+
+UPDATE redFlagsData
+SET reason =
+    CASE
+        WHEN reason = 'At-risk lead(Gold Competitor)'
+            THEN 'Another gold dealer mentioned'
+
+        WHEN reason = 'At-risk lead(Financial Advisor)'
+            THEN 'Financial advisor mentioned'
+
+        WHEN reason = 'Large change in lead type'
+            THEN 'Large drop in lead type'
+
+        WHEN reason = 'Potentially qualified but not transferred'
+            THEN 'Potentially missed transfer'
+
+        WHEN reason IN (
+            'Qualified/partially qualified and trust < 3',
+            'Qualified/partially qualified and hesitation < 3'
+        )
+            THEN 'Low trust or hesitation for a qualified/partially qualified lead'
+
+        WHEN reason IN (
+            'Qualified/partially qualified and trust drops by 2',
+            'Qualified/partially qualified and hesitation drops by 2'
+        )
+            THEN 'Trust or hesitation dropped significantly'
+
+        ELSE reason
+    END;
+
+
+
+
+UPDATE lead_summary
+SET 
+    broker_name = bs.broker_name,
+    broker_id = bs.broker_id,
+    role = bs.role
+FROM broker_summary bs
+WHERE lead_summary.call_id = bs.call_id;
+
+
+UPDATE lead_details
+SET 
+    broker_name = bs.broker_name,
+    broker_id = bs.broker_id,
+    role = bs.role
+FROM broker_summary bs
+WHERE lead_details.call_id = bs.call_id;
+
+UPDATE lead_dashboard
+SET 
+    broker_name = bs.broker_name,
+    broker_id = bs.broker_id,
+    role = bs.role
+FROM broker_summary bs
+WHERE lead_dashboard.call_id = bs.call_id
+  AND (
+        lead_dashboard.broker_name IS NULL OR TRIM(lead_dashboard.broker_name) = '' 
+        OR lead_dashboard.broker_id IS NULL OR TRIM(lead_dashboard.broker_id) = '' 
+        OR lead_dashboard.role IS NULL OR TRIM(lead_dashboard.role) = ''
+  );
+
+
+SELECT COUNT(*)
+FROM broker_summary bs
+JOIN broker b
+  ON bs.broker_name = b.broker_name
+WHERE bs.role = 'nan';
+
+
+
+UPDATE broker_summary bs
+SET
+    broker_id = b.broker_id,
+    role      = b.role
+FROM broker b
+WHERE bs.broker_name = b.broker_name
+  AND (
+        bs.role IS NULL
+        OR TRIM(bs.role) = ''
+        OR LOWER(TRIM(bs.role)) = 'nan'
+      );

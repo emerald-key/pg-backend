@@ -87,6 +87,7 @@ def lambda_handler(event, context):
                 extension = broker.get('extension') or 'NULL'
                 email = broker.get('email') or 'NULL'
                 role = broker.get('role') or 'NULL'
+                tier = broker.get('tier') or 'NULL'
                 state = broker.get('state') or 'NULL'
                 broker_tenure = broker.get('broker_tenure') or 'NULL'
 
@@ -95,6 +96,8 @@ def lambda_handler(event, context):
                     name_parts = broker_name_original.split()
                     if len(name_parts) == 2:  # Ensure it's a first and last name
                         broker_name = f"{name_parts[1]}, {name_parts[0]}"
+                        broker_first_name = name_parts[0]
+                        broker_last_name = name_parts[1]
                     else:
                         broker_name = broker_name_original  # In case of unexpected format (e.g., middle names)
                 else:
@@ -104,22 +107,44 @@ def lambda_handler(event, context):
                 if broker_exists(broker_name):
                     logger.info(f"Broker {broker_name} already exists. Skipping insertion.")
                     logger.info("Broker already exists")
+                    update_sql_query = f"""
+                    UPDATE public.Broker
+                    SET broker_name_original = '{broker_name_original}',
+                        broker_name = '{broker_name}',
+                        broker_first_name = '{broker_first_name}',
+                        broker_last_name = '{broker_last_name}',
+                        phoneNumber = {f"'{phoneNumber}'" if phoneNumber else "NULL"},
+                        email = {f"'{email}'" if email else "NULL"},
+                        extension = {f"'{extension}'" if extension else "NULL"},
+                        state = {f"'{state}'" if state else "NULL"},
+                        role = '{role}',
+                        tier = '{tier}'
+
+                    WHERE broker_name = '{broker_name}';
+                    """
+
+                      # Execute update query
+                    rows_updated = execute_redshift_query(update_sql_query)
+                    logger.info(f"Rows updated: {rows_updated}")
                     continue  # Skip to the next broker if it exists
                 # return
                 # If the fields are strings, wrap them in single quotes, otherwise use raw values
                 broker_id = f"'{broker_id}'" if broker_id != 'NULL' else broker_id
                 broker_name_original = f"'{broker_name_original}'" if broker_name_original != 'NULL' else broker_name_original
                 broker_name = f"'{broker_name}'" if broker_name != 'NULL' else broker_name
+                broker_first_name = f"'{broker_first_name}'" if broker_first_name != 'NULL' else broker_first_name
+                broker_last_name = f"'{broker_last_name}'" if broker_last_name != 'NULL' else broker_last_name
                 phoneNumber = f"'{phoneNumber}'" if phoneNumber != 'NULL' else phoneNumber
                 email = f"'{email}'" if email != 'NULL' else email
                 role = f"'{role}'" if role != 'NULL' else role
+                tier = f"'{tier}'" if tier != 'NULL' else tier
                 state = f"'{state}'" if state != 'NULL' else state
                 extension = f"'{extension}'" if extension != 'NULL' else extension
 
                 # Construct the SQL insert query
                 insert_sql_query = f"""
-                INSERT INTO public.Broker (broker_id, broker_name_original, broker_name, phoneNumber, email, extension, state, role)
-                VALUES ({broker_id}, {broker_name_original}, {broker_name}, {phoneNumber}, {email}, {extension}, {state}, {role});
+                INSERT INTO public.Broker (broker_id, broker_name_original, broker_name,broker_first_name,broker_last_name, phoneNumber, email, extension, state, role,tier)
+                VALUES ({broker_id}, {broker_name_original}, {broker_name},{broker_first_name},{broker_last_name}, {phoneNumber}, {email}, {extension}, {state}, {role},{tier});
                 """
                 
                 # Execute insert query
@@ -176,6 +201,7 @@ def brokers_list():
     "email": "a.castle@prioritygold.com",
     "state":"CA",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Allen James",
@@ -192,6 +218,7 @@ def brokers_list():
     "email": "a.aragon@prioritygold.com",
     "state":"R",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "BJ Slack",
@@ -224,6 +251,7 @@ def brokers_list():
     "email": "b.dow@prioritygold.com",
     "state":"R",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Chris Cox",
@@ -256,6 +284,7 @@ def brokers_list():
     "email": "g.matthews@prioritygold.com",
     "state":"TX",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Hayden Rosene",
@@ -272,6 +301,7 @@ def brokers_list():
     "email": "johanna.t@prioritygold.com",
     "state":"CA",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Jon Wise",
@@ -296,6 +326,7 @@ def brokers_list():
     "email": "lawrence.w@prioritygold.com",
     "state":"CA",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Liam Kildare",
@@ -304,6 +335,7 @@ def brokers_list():
     "email": "l.kildare@prioritygold.com",
     "state":"CA",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Lindsey Banghart",
@@ -320,6 +352,7 @@ def brokers_list():
     "email": "l.green@prioritygold.com",
     "state":"R",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Matt Arrieta",
@@ -328,6 +361,7 @@ def brokers_list():
     "email": "m.arrieta@prioritygold.com",
     "state":"CA",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Matthew Boylan",
@@ -336,6 +370,7 @@ def brokers_list():
     "email": "m.boylan@prioritygold.com",
     "state":"CA",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Michael Flores",
@@ -352,6 +387,7 @@ def brokers_list():
     "email": "r.daniels@prioritygold.com",
     "state":"CA",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Scott Wagner",
@@ -384,6 +420,7 @@ def brokers_list():
     "email": "t.cook@prioritygold.com",
     "state":"TX",
     "role":"Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Tom Hogan",
@@ -408,6 +445,7 @@ def brokers_list():
     "email": "a.brancieri@prioritygold.com",
     "state":"R",
     "role":"Sr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Barbie Oyama",
@@ -424,6 +462,7 @@ def brokers_list():
     "email": "b.francis@prioritygold.com",
     "state":"CA",
     "role":"Sr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Bill Goocher",
@@ -480,6 +519,7 @@ def brokers_list():
     "email": "k.kim@prioritygold.com",
     "state":"CA",
     "role":"Sr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Mark Hamilton",
@@ -496,6 +536,7 @@ def brokers_list():
     "email": "m.clouse@prioritygold.com",
     "state":"CA",
     "role":"Sr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Michael Perelman",
@@ -512,6 +553,7 @@ def brokers_list():
     "email": "m.steckler@prioritygold.com",
     "state":"CA",
     "role":"Sr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Reginald Flowers",
@@ -519,7 +561,7 @@ def brokers_list():
     "extension": "168",
     "email": "r.flowers@prioritygold.com",
     "state":"CA",
-    "role":"Sr. Account Executive",
+    "role":"Jr. Account Executive",
   },
   {
     "name": "Richard Stites",
@@ -528,6 +570,7 @@ def brokers_list():
     "email": "richard.s@prioritygold.com",
     "state":"R",
     "role":"Sr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Steve Mitchell",
@@ -544,6 +587,7 @@ def brokers_list():
     "email": "s.bruce@prioritygold.com",
     "state":"CA",
     "role":"Sr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Terry Kelly",
@@ -552,6 +596,7 @@ def brokers_list():
     "email": "t.kelly@prioritygold.com",
     "state":"CA",
     "role":"Sr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Tony Magana",
@@ -576,6 +621,7 @@ def brokers_list():
     "email": "b.rasic@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"A"
   },
   #new brokers added on 14-7-2025
   {
@@ -585,6 +631,7 @@ def brokers_list():
     "email": "a.davis@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Brendin Woodard",
@@ -601,6 +648,7 @@ def brokers_list():
     "email": "c.turner@prioritygold.com",
     "state": "TX",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Daniel Damian",
@@ -609,6 +657,7 @@ def brokers_list():
     "email": "d.damian@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Dillon Cory",
@@ -616,7 +665,8 @@ def brokers_list():
     "extension": "191",
     "email": "d.cory@prioritygold.com",
     "state": "CA",
-    "role": "Jr. Account Executive",
+    "role": "Sr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Emmett Showers",
@@ -625,6 +675,7 @@ def brokers_list():
     "email": "e.showers@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Irving Maldonado",
@@ -633,6 +684,7 @@ def brokers_list():
     "email": "irving.m@prioritygold.com",
     "state": "R",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Joe Huss",
@@ -641,6 +693,7 @@ def brokers_list():
     "email": "j.huss@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Luke Dykstra",
@@ -657,6 +710,7 @@ def brokers_list():
     "email": "m.stevens@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Matt Saladino",
@@ -673,6 +727,7 @@ def brokers_list():
     "email": "matt.w@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Max Bershad",
@@ -689,6 +744,7 @@ def brokers_list():
     "email": "m.gould@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Preston Cramer",
@@ -704,6 +760,7 @@ def brokers_list():
     "email": "v.whatley@prioritygold.com",
     "state": "TX",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "James Checkowski",
@@ -711,7 +768,7 @@ def brokers_list():
     "extension": "120",
     "email": "j.checkowski@prioritygold.com",
     "state": "CA",
-    "role": "Jr. Account Executive",
+    "role": "Jr. Account Executive"
   },
   {
     "name": "Christian Taylor",
@@ -720,6 +777,7 @@ def brokers_list():
     "email": "c.taylor@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Robert Paet",
@@ -728,6 +786,7 @@ def brokers_list():
     "email": "r.paet@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Aaron Daniels",
@@ -736,6 +795,7 @@ def brokers_list():
     "email": "a.daniels@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Brian Lawlor",
@@ -744,6 +804,7 @@ def brokers_list():
     "email": "b.lawlor@prioritygold.com",
     "state": "CA",
     "role": "Jr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Chris James",
@@ -752,6 +813,7 @@ def brokers_list():
     "email": "c.james@prioritygold.com",
     "state": "CA",
     "role": "Sr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Daniel Joseph",
@@ -767,6 +829,7 @@ def brokers_list():
     "email": "g.reed@prioritygold.com",
     "state": "CA",
     "role": "Sr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "James Bryan",
@@ -775,6 +838,7 @@ def brokers_list():
     "email": "j.bryan@prioritygold.com",
     "state": "CA",
     "role": "Sr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Kevin Manning",
@@ -783,6 +847,7 @@ def brokers_list():
     "email": "k.manning@prioritygold.com",
     "state": "R",
     "role": "Sr. Account Executive",
+    "tier":"B"
   },
   {
     "name": "Lance Hill",
@@ -791,6 +856,7 @@ def brokers_list():
     "email": "l.hill@prioritygold.com",
     "state": "TX",
     "role": "Sr. Account Executive",
+    "tier":"B"
   },{
     "name": "Will Hart",
     "phoneNumber": "469-802-7068",
@@ -806,6 +872,7 @@ def brokers_list():
     "email": "l.shvarts@prioritygold.com",
     "state": "CA",
     "role": "Sr. Account Executive",
+    "tier":"A"
   },
   {
     "name": "Tylor Grimes",
@@ -814,6 +881,310 @@ def brokers_list():
     "email": "t.grimes@prioritygold.com",
     "state": "CA",
     "role": "Sr. Account Executive",
+  },
+  {
+    "name": "Brett -C Rasic",
+    "phoneNumber": "",
+    "extension": "",
+    "email": "",
+    "state": "",
+    "role": "Jr. Account Executive",
+  },
+  {
+    "name": "Joni Anderson",
+    "phoneNumber": "469-421-9035",
+    "extension": "143",
+    "email": "j.anderson@prioritygold.com",
+    "state": "CA",
+    "role": "Sr. Account Executive",
+  },
+  {
+    "name": "Benjamin Braga",
+    "phoneNumber": "469-694-8551",
+    "extension": "134",
+    "email": "b.braga@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Billy Wagner",
+    "phoneNumber": "",
+    "extension": "",
+    "email": "b.wagner@prioritygold.com",
+    "state": "R",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Canyon Banks",
+    "phoneNumber": "469-935-6628",
+    "extension": "121",
+    "email": "c.banks@prioritygold.com",
+    "state": "CA",
+    "role": "Team Kwan",
+  },
+  {
+    "name": "Charles Smith",
+    "phoneNumber": "",
+    "extension": "",
+    "email": "c.smith@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Josh Goldberg",
+    "phoneNumber": "469-405-1606",
+    "extension": "193",
+    "email": "j.goldberg@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"C"
+  },
+  {
+    "name": "Rafael Calvi",
+    "phoneNumber": "469-868-0542",
+    "extension": "184",
+    "email": "r.calvi@prioritygold.com",
+    "state": "R",
+    "role": "Jr. Account Executive",
+    "tier":"C"
+  },
+  {
+    "name": "Roman Cooper",
+    "phoneNumber": "469-895-9207",
+    "extension": "174",
+    "email": "r.cooper@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Gary Okansian",
+    "phoneNumber": "",
+    "extension": "",
+    "email": "g.okansian@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Max Rolan",
+    "phoneNumber": "469-206-5931",
+    "extension": "210",
+    "email": "m.rolan@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Ivan Spencer",
+    "phoneNumber": "469-649-9626",
+    "extension": "139",
+    "email": "i.spencer@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Keith Whaley",
+    "phoneNumber": "469-722-5321",
+    "extension": "130",
+    "email": "k.whaley@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Christopher Aguilar",
+    "phoneNumber": "469-373-1619",
+    "extension": "153",
+    "email": "c.aguilar@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"C"
+  },
+  {
+    "name": "Shaun Styles",
+    "phoneNumber": "469-902-6773",
+    "extension": "120",
+    "email": "s.styles@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Geovanni Romero",
+    "phoneNumber": "",
+    "extension": "",
+    "email": "g.romero@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"C"
+  },
+  {
+    "name": "Godfree Chrenko",
+    "phoneNumber": "469-507-3592",
+    "extension": "151",
+    "email": "g.chrenko@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Jon Bold",
+    "phoneNumber": "469-729-4283",
+    "extension": "206",
+    "email": "j.bold@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"D"
+  },
+  {
+    "name": "Brian Saintonge",
+    "phoneNumber": "469-775-9578",
+    "extension": "189",
+    "email": "b.saintonge@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"D"
+  },
+  {
+    "name": "Nate Koonce",
+    "phoneNumber": "469-513-8544",
+    "extension": "157",
+    "email": "n.koonce@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"D"
+  },
+  {
+    "name": "Alexander Principe",
+    "phoneNumber": "",
+    "extension": "",
+    "email": "a.principe@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"D"
+  },
+  {
+    "name": "Jake McCorkle",
+    "phoneNumber": "469-680-3058",
+    "extension": "213",
+    "email": "j.mccorkle@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"D"
+  },
+  {
+    "name": "Nathan Pitt",
+    "phoneNumber": "469-537-7265",
+    "extension": "214",
+    "email": "n.pitt@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"D"
+  },
+  {
+    "name": "Adrian Zabala",
+    "phoneNumber": "469-334-2009",
+    "extension": "175",
+    "email": "a.zabala@prioritygold.com",
+    "state": "CA",
+    "role": "Jr. Account Executive",
+    "tier":"D"
+  },
+  {
+    "name": "Brian Bracken",
+    "phoneNumber":"",
+    "extension": "",
+    "email": "b.bracken@prioritygold.com",
+    "state":"R",
+    "role":"Sr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Joe Green",
+    "phoneNumber":"469-405-8121",
+    "extension": "131",
+    "email": "j.green@prioritygold.com",
+    "state":"CA",
+    "role":"Sr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Jeffrey Krull",
+    "phoneNumber":"469-902-6893",
+    "extension": "122",
+    "email": "j.krull@prioritygold.com",
+    "state":"CA",
+    "role":"Sr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Giovanni Oliva",
+    "phoneNumber":"",
+    "extension": "",
+    "email": "g.oliva@prioritygold.com",
+    "state":"CA",
+    "role":"Sr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Cameron Johnson",
+    "phoneNumber":"469-868-8270",
+    "extension": "212",
+    "email": "c.johnson@prioritygold.com",
+    "state":"CA",
+    "role":"Jr. Account Executive",
+    "tier":"B"
+  },
+  {
+    "name": "Yolanda Gutierrez",
+    "phoneNumber":"469-895-5726",
+    "extension": "104",
+    "email": "y.gutierrez@prioritygold.com",
+    "state":"CA",
+    "role":"IRA Folks",
+    "tier":""
+  },
+  {
+    "name": "Joni Anderson",
+    "phoneNumber":"469-421-9035",
+    "extension": "143",
+    "email": "j.anderson@prioritygold.com",
+    "state":"CA",
+    "role":"IRA Folks",
+    "tier":""
+  },
+  {
+    "name": "Tish Aldana",
+    "phoneNumber":"469-868-0429",
+    "extension": "204",
+    "email": "t.aldana@prioritygold.com",
+    "state":"CA",
+    "role":"IRA Folks",
+    "tier":""
+  },
+  {
+    "name": "April Harrison",
+    "phoneNumber":"469-930-2254",
+    "extension": "196",
+    "email": "a.harrison@prioritygold.com",
+    "state":"TX",
+    "role":"IRA Folks",
+    "tier":""
+  },
+  {
+    "name": "Kelly Ehrenberg",
+    "phoneNumber":"469-453-0628",
+    "extension": "215",
+    "email": "k.ehrenberg@prioritygold.com",
+    "state":"TX",
+    "role":"IRA Folks",
+    "tier":""
   }
 ]
+
 

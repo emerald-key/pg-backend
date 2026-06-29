@@ -1,0 +1,1 @@
+select * from Affiliate_monthly_sales

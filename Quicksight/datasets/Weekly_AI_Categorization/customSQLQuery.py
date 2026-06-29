@@ -1,0 +1,1 @@
+select * from Weekly_AI_Categorization

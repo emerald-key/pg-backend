@@ -124,7 +124,10 @@ def copy_to_redshift_append(table_name, s3_key):
             lead_type, lead_type_reason, lead_intrinsic_avg, concern_type, concern_type_reason, dollar_amount,
             account_type, lead_qualification, lead_qualification_reason, summary, created_datetime,
             velocify_uuid, source, lead_details_id, details_timestamp, duration, durationinsecs,
-            criteria, score, reason, call_type, outcome, broker_name, broker_id, role, actual_dollar_amount
+            criteria, score, reason, call_type, outcome, broker_name, broker_id, role, actual_dollar_amount,
+            financial_advisor_mentioned,financial_advisor_context,sales_competitor,sales_competitor_context,appointment_set,appointment_evidence,
+            callback,callback_reasoning,concern_needed,heat_level,heat_signals,heat_summary,compliance_has_issue,compliance_issues_evidences,
+            compliance_priority,classify_ask_for_sale, classify_ask_for_sale_reason, classify_concern, classify_concern_reason
         )
         FROM 's3://{bucket}/{s3_key}'
         CREDENTIALS 'aws_access_key_id={aws_access_key};aws_secret_access_key={aws_secret_access_key}'
@@ -195,7 +198,11 @@ def run_lead_dashboard_refresh():
                ls.account_type, ls.lead_qualification, ls.lead_qualification_reason, ls.summary,
                ls.created_datetime, ls.velocify_uuid, ls.source,ld.lead_details_id, ld.details_timestamp,
                ld.duration, ld.durationInSecs, ld.criteria, ld.score, ld.reason, ld.call_type,
-               ld.outcome, ld.broker_name, ld.broker_id, ld.role,ls.actual_dollar_amount
+               ld.outcome, ld.broker_name, ld.broker_id, ld.role,ls.actual_dollar_amount,
+               ls.financial_advisor_mentioned,ls.financial_advisor_context,ls.sales_competitor,
+               ls.sales_competitor_context,ls.appointment_set,ls.appointment_evidence,ls.callback,ls.callback_reasoning,ls.concern_needed, 
+               ls.heat_level,ls.heat_signals,ls.heat_summary,ls.compliance_has_issue,ls.compliance_issues_evidences,
+               ls.compliance_priority,ls.classify_ask_for_sale, ls.classify_ask_for_sale_reason, ls.classify_concern, ls.classify_concern_reason
         FROM public.lead_summary ls
         LEFT JOIN lead_details_union ld ON ls.lead_id = ld.lead_id
         WHERE ls.created_datetime > '{latest_timestamp}'

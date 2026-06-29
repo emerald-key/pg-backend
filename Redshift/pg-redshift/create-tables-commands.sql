@@ -11,7 +11,9 @@ CREATE TABLE public.staging_call (
     Inbound_Number VARCHAR(255),
     Prospect_Number VARCHAR(255),
     Velocify_Recording_URL VARCHAR(65535),
-    Velocify_UUID VARCHAR(255)
+    Velocify_UUID VARCHAR(255),
+    Call_Duration INT,
+    Source VARCHAR(255)
 );
 
 CREATE TABLE public.call (
@@ -27,7 +29,9 @@ CREATE TABLE public.call (
     Inbound_Number VARCHAR(255),
     Prospect_Number VARCHAR(255),
     Velocify_Recording_URL VARCHAR(65535),
-    Velocify_UUID VARCHAR(255)
+    Velocify_UUID VARCHAR(255),
+    Call_Duration INT,
+    Source VARCHAR(255)
 );
 
 CREATE TABLE public.Lead (
@@ -39,6 +43,7 @@ CREATE TABLE public.Lead (
     Broker_Name VARCHAR,
     "Group" VARCHAR,
     Date_Added TIMESTAMP,
+    Date_Modified TIMESTAMP,
     Last_Action VARCHAR,
     First_Contact_Attempt_Date TIMESTAMP,
     Action_Count INT,
@@ -86,6 +91,7 @@ CREATE TABLE public.Staging_Lead (
     Broker_Name VARCHAR,
     "Group" VARCHAR,
     Date_Added VARCHAR,
+    Date_Modified VARCHAR,
     Last_Action VARCHAR,
     First_Contact_Attempt_Date VARCHAR,
     Action_Count VARCHAR,
@@ -166,12 +172,15 @@ CREATE TABLE public.staging_Lead_Log (
 CREATE TABLE public.Broker (
     Broker_ID VARCHAR PRIMARY KEY,
     Broker_Name VARCHAR(255),
+    Broker_First_Name VARCHAR(255),
+    Broker_Last_Name VARCHAR(255),
     Broker_Name_Original VARCHAR(255),
     phoneNumber VARCHAR(255),
     email VARCHAR(255),
     extension VARCHAR(255),
     state VARCHAR(255),
-    role VARCHAR(255)
+    role VARCHAR(255),
+    tier VARCHAR(255)
 );
 
 CREATE TABLE public.Broker_Scores (
@@ -273,7 +282,26 @@ CREATE TABLE public.lead_summary (
     Broker_Name  VARCHAR(255),
     Broker_ID  VARCHAR(255),
     role  VARCHAR(255),
-    actual_dollar_amount VARCHAR(65535)
+    actual_dollar_amount VARCHAR(65535),
+    Financial_Advisor_Mentioned VARCHAR(65535),
+    Financial_Advisor_Context VARCHAR(65535),
+    Sales_Competitor VARCHAR(65535),
+    Sales_Competitor_Context VARCHAR(65535),
+    appointment_set VARCHAR(65535),
+    appointment_evidence    VARCHAR(65535),
+    callback    VARCHAR(65535),
+    callback_reasoning  VARCHAR(65535),
+    concern_needed  VARCHAR(65535),
+    heat_level  VARCHAR(65535),
+    heat_signals  VARCHAR(65535),
+    heat_summary  VARCHAR(65535),
+    compliance_has_issue    VARCHAR(65535),
+    compliance_issues_evidences    VARCHAR(65535),
+    compliance_priority    VARCHAR(65535),
+    classify_ask_for_sale   VARCHAR(65535),
+    classify_ask_for_sale_reason    VARCHAR(65535),
+    classify_concern    VARCHAR(65535),
+    classify_concern_reason VARCHAR(65535)
 );
 
 CREATE TABLE public.lead_details (
@@ -356,7 +384,26 @@ CREATE TABLE public.lead_dashboard (
     Broker_Name  VARCHAR(255),
     Broker_ID  VARCHAR(255),
     role  VARCHAR(255),
-    actual_dollar_amount VARCHAR(65535)
+    actual_dollar_amount VARCHAR(65535),
+    Financial_Advisor_Mentioned VARCHAR(65535),
+    Financial_Advisor_Context VARCHAR(65535),
+    Sales_Competitor VARCHAR(65535),
+    Sales_Competitor_Context VARCHAR(65535),
+    appointment_set VARCHAR(65535),
+    appointment_evidence    VARCHAR(65535),
+    callback    VARCHAR(65535),
+    callback_reasoning  VARCHAR(65535),
+    concern_needed  VARCHAR(65535),
+    heat_level  VARCHAR(65535),
+    heat_signals  VARCHAR(65535),
+    heat_summary  VARCHAR(65535),
+    compliance_has_issue    VARCHAR(65535),
+    compliance_issues_evidences    VARCHAR(65535),
+    compliance_priority    VARCHAR(65535),
+    classify_ask_for_sale   VARCHAR(65535),
+    classify_ask_for_sale_reason    VARCHAR(65535),
+    classify_concern    VARCHAR(65535),
+    classify_concern_reason VARCHAR(65535)
 );
 CREATE TABLE public.sales (
     Lead_ID         INT PRIMARY KEY,
@@ -444,5 +491,180 @@ CREATE TABLE public.redFlagsData (
     Original_Score_Or_Type VARCHAR,
     New_Score_Or_Type      VARCHAR,
     Reason          VARCHAR(65535),
-    Created_Datetime  timestamp
+    Created_Datetime  timestamp,
+    Criteria VARCHAR(65535),
+    Score DECIMAL(5, 2),
+    Lead_Type VARCHAR(65535),
+    Lead_Qualification VARCHAR(65535), 
+    Dollar_amount VARCHAR(65535), 
+    Sales_Competitor VARCHAR(65535), 
+    Sales_Competitor_Context VARCHAR(65535),
+    Financial_Advisor_Context VARCHAR(65535),
+    reason_transcript    VARCHAR(65535),
+    Tier                 VARCHAR(255),
+    Competitor_Audio_Timestamp       VARCHAR(255),
+    Finan_Adv_Audio_Timestamp        VARCHAR(255),
+    Dollar_Amount_Audio_Timestamp    VARCHAR(255),
+    Dollar_Amount_Transcript_Snippet  VARCHAR(255),
+    highdollar_amount_audio_timestamp VARCHAR(255),
+    broker_info         VARCHAR(65535),
+    velocify_uuid                 VARCHAR(255),
+    call_id_list                 SUPER,
+    brokers_involved             SUPER,
+    role_tier                 SUPER,
+    concern_score VARCHAR(255),
+    interest_score VARCHAR(255),
+    discuss_funds_score VARCHAR(255),
+    call_type VARCHAR(255),
+    call_duration_original VARCHAR(255),
+    outcome VARCHAR(255),
+    lead_score VARCHAR(65535),le
+    appointment_set VARCHAR(65535),
+    callback    VARCHAR(65535),
+    concern_needed  VARCHAR(65535),
+    heat_level  VARCHAR(65535),
+    heat_signals  VARCHAR(65535),
+    heat_summary  VARCHAR(65535),
+    audio_call_type_reason  VARCHAR(65535),
+    audio_call_type  VARCHAR(65535),
+    appointment_evidence    VARCHAR(65535),
+    compliance_has_issue    VARCHAR(65535),
+    compliance_issues_evidences    VARCHAR(65535),
+    compliance_priority    VARCHAR(65535),
+    classify_ask_for_sale   VARCHAR(65535),
+    classify_ask_for_sale_reason    VARCHAR(65535),
+    classify_concern    VARCHAR(65535),
+    classify_concern_reason VARCHAR(65535)
 );
+CREATE TABLE public.callrecording_transcription_errors (
+    id VARCHAR(50),
+    call_id VARCHAR(50),
+    velocify_date VARCHAR(20),
+    error_message VARCHAR(MAX),
+    created_at TIMESTAMP DEFAULT GETDATE()
+);
+
+CREATE TABLE IF NOT EXISTS public.stg_transcripts
+(LIKE public.transcripts);
+
+
+CREATE TABLE public.lead_source_summary (
+    id                      VARCHAR PRIMARY KEY,
+    source                   VARCHAR(255),
+
+    avg_talk_time             DECIMAL(10,2),
+    talk_time_high_pct        DECIMAL(5,2),
+
+    avg_intrinsic             DECIMAL(10,2),
+    intrinsic_high_pct        DECIMAL(5,2),
+
+    lead_type_score           DECIMAL(5,2),
+    lead_quality_index        DECIMAL(5,2),
+
+    num_leads                 DECIMAL,
+    num_clients               DECIMAL,
+    client_conv_percent       DECIMAL(5,2),
+
+    window                    VARCHAR(50),
+    created_datetime          TIMESTAMP
+);
+
+CREATE VIEW v_lead_source_summary AS
+SELECT *,
+       CASE
+         WHEN created_datetime = MAX(created_datetime) OVER ()
+         THEN true
+         ELSE false
+       END AS is_latest_run
+FROM lead_source_summary;
+
+
+
+CREATE OR REPLACE VIEW redflagsdata_qs AS
+SELECT
+    *,
+    CASE
+        WHEN Reason IN ('At-risk lead(Gold Competitor)', 'Another gold dealer mentioned')
+            THEN 'Another gold dealer mentioned'
+        WHEN Reason IN ('At-risk lead(Financial Advisor)', 'Financial advisor mentioned')
+            THEN 'Financial advisor mentioned'
+        WHEN Reason IN (
+            'Large change in Lead type',
+            'Large change in lead type',
+            'Large drop in lead type'
+        )
+            THEN 'Large drop in lead type'
+        WHEN Reason IN (
+            'Potentially qualified but not transferred',
+            'Potentially missed transfer'
+        )
+            THEN 'Potentially missed transfer'
+        WHEN Reason IN (
+            'Qualified/partially qualified and trust < 3, Qualified/partially qualified and hesitation < 3.',
+            'Low trust or hesitation for a qualified/partially qualified lead'
+        )
+            THEN 'Low trust or hesitation for a qualified/partially qualified lead'
+        WHEN Reason IN (
+            'Qualified/partially qualified and trust drops by 2, Qualified/partially qualified and hesitation drops by 2.',
+            'Trust or hesitation dropped significantly'
+        )
+            THEN 'Trust or hesitation dropped significantly'
+        ELSE Reason
+    END AS Reason_normalized
+FROM redFlagsData;
+
+
+
+CREATE OR REPLACE VIEW v_lead_source_trends AS
+SELECT
+    t.*,
+    'Week-' || t.week_index AS week_label
+FROM (
+    SELECT
+        source,
+        window,
+        DATE_TRUNC('week', run_date) AS run_week,
+
+        AVG(lead_quality_index)     AS avg_lqi,
+        AVG(client_conv_percent)    AS avg_client_conv,
+
+        COUNT(DISTINCT run_date)    AS runs_in_week,
+
+        DENSE_RANK() OVER (
+            PARTITION BY window
+            ORDER BY DATE_TRUNC('week', run_date) DESC
+        ) AS week_index
+    FROM lead_source_summary
+    GROUP BY
+        source,
+        window,
+        DATE_TRUNC('week', run_date)
+) t;
+CREATE TABLE alertsData (
+    alert_date            TIMESTAMP,
+    lead_id               VARCHAR(255),
+    lead_name             VARCHAR(255),
+    broker_name           VARCHAR(255),
+    call_id               VARCHAR(100),
+    reason_for_flag       VARCHAR(500),
+    original_flagged_value VARCHAR(100),
+    new_flagged_value     VARCHAR(100),
+    context               VARCHAR(500),
+    created_datetime      TIMESTAMP
+)
+DISTSTYLE AUTO;
+
+
+CREATE TABLE source_lqi_metrics (
+    source                    VARCHAR(255) PRIMARY KEY,
+    run_week                  DATE,
+    rank_type                 VARCHAR(50),
+    avg_lqi                   DECIMAL(10,4),
+    lqi_wow                   DECIMAL(10,4),
+    lqi_rolling_3w            DECIMAL(10,4),
+    lqi_wow_rolling_3w        DECIMAL(10,4),
+    avg_client_conv           DECIMAL(10,4),
+    runs_in_week              INTEGER,
+    wow_anomaly               BOOLEAN
+)
+DISTSTYLE AUTO;
